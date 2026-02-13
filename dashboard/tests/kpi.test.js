@@ -273,6 +273,152 @@ test('normalizeToTrades processes Performance CSV correctly', function () {
   assert.strictEqual(trades[0].sellPrice, 25271);
 });
 
+// === detectCSVFormat ===
+console.log('\n=== CSV Format Detection Tests ===\n');
+
+test('detectCSVFormat identifies Fills CSV', function () {
+  var headers = ['_id', '_orderId', '_contractId', '_timestamp', '_tradeDate', '_action', '_qty', '_price', '_active', '_accountId', 'Fill ID', 'Order ID', 'Timestamp', 'Date', 'Account', 'B/S', 'Quantity', 'Price', '_priceFormat', '_priceFormatType', '_tickSize', 'Contract', 'Product', 'Product Description', 'commission'];
+  assert.strictEqual(CSVParser.detectCSVFormat(headers), 'fills');
+});
+
+test('detectCSVFormat identifies Performance CSV', function () {
+  var headers = ['symbol', '_priceFormat', '_priceFormatType', '_tickSize', 'buyFillId', 'sellFillId', 'qty', 'buyPrice', 'sellPrice', 'pnl', 'boughtTimestamp', 'soldTimestamp', 'duration'];
+  assert.strictEqual(CSVParser.detectCSVFormat(headers), 'performance');
+});
+
+test('detectCSVFormat returns unknown for unrecognized format', function () {
+  var headers = ['col1', 'col2', 'col3'];
+  assert.strictEqual(CSVParser.detectCSVFormat(headers), 'unknown');
+});
+
+// === detectDirection ===
+console.log('\n=== Direction Detection Tests ===\n');
+
+test('detectDirection from B/S column Buy', function () {
+  assert.strictEqual(CSVParser.detectDirection({ 'B/S': ' Buy' }), 'Buy');
+});
+
+test('detectDirection from B/S column Sell', function () {
+  assert.strictEqual(CSVParser.detectDirection({ 'B/S': ' Sell' }), 'Sell');
+});
+
+test('detectDirection from _action 0 is Buy', function () {
+  assert.strictEqual(CSVParser.detectDirection({ 'B/S': '', '_action': '0' }), 'Buy');
+});
+
+test('detectDirection from _action 1 is Sell', function () {
+  assert.strictEqual(CSVParser.detectDirection({ 'B/S': '', '_action': '1' }), 'Sell');
+});
+
+// === calculateDuration ===
+console.log('\n=== Duration Calculation Tests ===\n');
+
+test('calculateDuration 29 seconds', function () {
+  var start = new Date(2026, 1, 12, 1, 33, 16);
+  var end = new Date(2026, 1, 12, 1, 33, 45);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '29sec');
+});
+
+test('calculateDuration 1 minute 27 seconds', function () {
+  var start = new Date(2026, 1, 12, 1, 38, 20);
+  var end = new Date(2026, 1, 12, 1, 39, 47);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '1min 27sec');
+});
+
+test('calculateDuration 1 hour 5 minutes', function () {
+  var start = new Date(2026, 1, 12, 1, 0, 0);
+  var end = new Date(2026, 1, 12, 2, 5, 0);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '1hr 5min');
+});
+
+test('calculateDuration 0 seconds', function () {
+  var start = new Date(2026, 1, 12, 1, 0, 0);
+  assert.strictEqual(CSVParser.calculateDuration(start, start), '0sec');
+});
+
+// === PRODUCT_MULTIPLIERS ===
+console.log('\n=== Product Multiplier Tests ===\n');
+
+test('NQ multiplier is 20', function () {
+  assert.strictEqual(CSVParser.PRODUCT_MULTIPLIERS['NQ'], 20);
+});
+
+test('MES multiplier is 5', function () {
+  assert.strictEqual(CSVParser.PRODUCT_MULTIPLIERS['MES'], 5);
+});
+
+test('ES multiplier is 50', function () {
+  assert.strictEqual(CSVParser.PRODUCT_MULTIPLIERS['ES'], 50);
+});
+
+// === normalizeFillsToTrades ===
+console.log('\n=== Fills to Trades Normalization Tests ===\n');
+
+test('normalizeFillsToTrades creates correct number of trades from simple fills', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 16:33:16.562Z,2026-02-11,0,1,6961.25,true,1,1,1,02/12/2026 01:33:16,2/12/26,ACC, Buy,1,6961.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 16:33:46.071Z,2026-02-11,1,1,6966.0,true,1,2,2,02/12/2026 01:33:46,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades.length, 1);
+});
+
+test('normalizeFillsToTrades calculates PnL correctly for MES', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 16:33:16.562Z,2026-02-11,0,1,6961.25,true,1,1,1,02/12/2026 01:33:16,2/12/26,ACC, Buy,1,6961.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 16:33:46.071Z,2026-02-11,1,1,6966.0,true,1,2,2,02/12/2026 01:33:46,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  // (6966.00 - 6961.25) * 5 = $23.75
+  assert.ok(Math.abs(trades[0].pnl - 23.75) < 0.01, 'Expected $23.75, got $' + trades[0].pnl);
+});
+
+test('normalizeFillsToTrades calculates PnL correctly for NQ', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,200,2026-02-11 06:34:46.772Z,2026-02-11,1,1,25271.0,true,1,1,1,02/11/2026 15:34:46,2/11/26,ACC, Sell,1,25271.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79\n' +
+    '2,2,200,2026-02-11 07:10:55.153Z,2026-02-11,0,1,25266.0,true,1,2,2,02/11/2026 16:10:55,2/11/26,ACC, Buy,1,25266.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades.length, 1);
+  // Short trade: sell first at 25271, buy back at 25266 → P&L = (25271 - 25266) * 20 = $100
+  assert.ok(Math.abs(trades[0].pnl - 100) < 0.01, 'Expected $100, got $' + trades[0].pnl);
+});
+
+test('normalizeFillsToTrades accumulates commission from both fills', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,200,2026-02-11 06:34:46.772Z,2026-02-11,1,1,25271.0,true,1,1,1,02/11/2026 15:34:46,2/11/26,ACC, Sell,1,25271.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79\n' +
+    '2,2,200,2026-02-11 07:10:55.153Z,2026-02-11,0,1,25266.0,true,1,2,2,02/11/2026 16:10:55,2/11/26,ACC, Buy,1,25266.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  // Commission: 0.79 (sell) + 0.79 (buy) = 1.58
+  assert.ok(Math.abs(trades[0].commission - 1.58) < 0.01, 'Expected $1.58, got $' + trades[0].commission);
+});
+
+test('normalizeFillsToTrades handles loss trade correctly', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 16:42:55.262Z,2026-02-11,0,1,6971.25,true,1,1,1,02/12/2026 01:42:55,2/12/26,ACC, Buy,1,6971.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 16:46:35.462Z,2026-02-11,1,1,6968.25,true,1,2,2,02/12/2026 01:46:35,2/12/26,ACC, Sell,1,6968.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  // (6968.25 - 6971.25) * 5 = -$15.00
+  assert.ok(Math.abs(trades[0].pnl - (-15.00)) < 0.01, 'Expected -$15.00, got $' + trades[0].pnl);
+});
+
+test('normalizeFillsToTrades FIFO matches multiple fills correctly', function () {
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 16:33:16.562Z,2026-02-11,0,1,6961.25,true,1,1,1,02/12/2026 01:33:16,2/12/26,ACC, Buy,1,6961.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 16:33:16.631Z,2026-02-11,0,1,6961.50,true,1,2,2,02/12/2026 01:33:16,2/12/26,ACC, Buy,1,6961.50,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '3,3,100,2026-02-11 16:33:46.071Z,2026-02-11,1,1,6966.0,true,1,3,3,02/12/2026 01:33:46,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '4,4,100,2026-02-11 16:33:46.072Z,2026-02-11,1,1,6966.0,true,1,4,4,02/12/2026 01:33:46,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades.length, 2);
+  // FIFO: first buy (6961.25) matched with first sell (6966.00) → $23.75
+  assert.ok(Math.abs(trades[0].pnl - 23.75) < 0.01, 'Trade 1: Expected $23.75, got $' + trades[0].pnl);
+  // FIFO: second buy (6961.50) matched with second sell (6966.00) → $22.50
+  assert.ok(Math.abs(trades[1].pnl - 22.50) < 0.01, 'Trade 2: Expected $22.50, got $' + trades[1].pnl);
+});
+
 // === Summary ===
 console.log('\n─────────────────────────────');
 console.log('Results: ' + passed + ' passed, ' + failed + ' failed');

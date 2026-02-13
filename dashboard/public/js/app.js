@@ -98,7 +98,16 @@
       return;
     }
 
-    // 自動マッピング検出
+    // CSVフォーマットを自動検出
+    var format = CSVParser.detectCSVFormat(parsed.headers);
+
+    if (format === 'fills') {
+      // Fills CSV → FIFOマッチングでトレードを生成
+      finalizeFillsTrades(parsed);
+      return;
+    }
+
+    // Performance CSV / その他 → 従来のマッピング処理
     var detection = CSVParser.autoDetectMapping(parsed.headers);
 
     if (detection.missing.length > 0) {
@@ -108,6 +117,37 @@
       // 全カラム検出済み → そのまま処理
       state.mapping = detection.mapping;
       finalizeTrades(parsed, detection.mapping);
+    }
+  }
+
+  /**
+   * Fills CSVからトレードデータを確定し、ダッシュボードを表示
+   * @param {{ headers: string[], rows: string[][] }} parsed
+   */
+  function finalizeFillsTrades(parsed) {
+    showStatus('Fills CSVからトレードデータを生成しています...');
+
+    try {
+      state.trades = CSVParser.normalizeFillsToTrades(parsed);
+
+      if (state.trades.length === 0) {
+        showError('マッチするトレードが見つかりませんでした。Buy/Sellのペアが存在するか確認してください。');
+        return;
+      }
+
+      state.kpis = KPI.calculateAllKPIs(state.trades);
+      state.dailySummary = KPI.calculateDailySummary(state.trades);
+      state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+      state.isLoaded = true;
+
+      renderDashboard();
+      showSection('dashboard');
+      hideStatus();
+
+      // Google Sheets保存（設定済みの場合）
+      saveToGoogleSheets();
+    } catch (err) {
+      showError('Fills CSVの処理中にエラーが発生しました: ' + err.message);
     }
   }
 
