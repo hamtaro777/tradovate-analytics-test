@@ -272,6 +272,7 @@
   function renderDashboard() {
     renderFileInfo();
     renderKPICards();
+    PnLCalendar.init('pnl-calendar', state.dailySummary);
     renderCharts();
     TradeTable.initTable(state.trades);
   }
