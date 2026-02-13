@@ -98,7 +98,35 @@
       return;
     }
 
-    // 自動マッピング検出
+    // CSVタイプ判定
+    var csvType = CSVParser.detectCSVType(parsed.headers);
+
+    if (csvType === 'orders') {
+      // Orders CSV → FIFOマッチングで損益算出
+      showStatus('Orders CSVを解析中（FIFOマッチング）...');
+      try {
+        var trades = CSVParser.normalizeOrdersToTrades(parsed);
+        if (trades.length === 0) {
+          showError('Filledの注文が見つかりませんでした。');
+          return;
+        }
+        state.trades = trades;
+        state.kpis = KPI.calculateAllKPIs(state.trades);
+        state.dailySummary = KPI.calculateDailySummary(state.trades);
+        state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+        state.isLoaded = true;
+
+        renderDashboard();
+        showSection('dashboard');
+        hideStatus();
+        saveToGoogleSheets();
+      } catch (err) {
+        showError('Orders CSVの処理中にエラーが発生しました: ' + err.message);
+      }
+      return;
+    }
+
+    // Performance CSV / その他 → 従来のマッピングフロー
     var detection = CSVParser.autoDetectMapping(parsed.headers);
 
     if (detection.missing.length > 0) {

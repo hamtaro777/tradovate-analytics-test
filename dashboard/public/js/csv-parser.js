@@ -1,11 +1,12 @@
 /**
  * Tradovate CSV Parser
  * CSVファイルを解析し、トレードデータに正規化する
+ * Performance CSV / Orders CSV 両対応
  */
 (function (root) {
   'use strict';
 
-  /** 必須カラム定義 */
+  /** 必須カラム定義（Performance CSV用） */
   var REQUIRED_COLUMNS = {
     symbol: ['symbol', 'Symbol', 'Contract', 'contract', 'Product'],
     buyPrice: ['buyPrice', 'Buy Price', 'Entry Price', 'entryPrice', 'avgPrice'],
@@ -22,6 +23,23 @@
     commission: ['commission', 'Commission', 'Fee', 'fee'],
     direction: ['B/S', 'direction', 'Direction', 'Side', 'side', '_action'],
     productDescription: ['Product Description', 'productDescription']
+  };
+
+  /** Orders CSV 判定用の必須カラム */
+  var ORDERS_REQUIRED_HEADERS = ['B/S', 'Status', 'avgPrice', 'Fill Time'];
+
+  /** 先物商品の1ポイントあたり金額（フォールバック用） */
+  var CONTRACT_MULTIPLIERS = {
+    ES: 50, MES: 5,
+    NQ: 20, MNQ: 2,
+    YM: 5, MYM: 0.5,
+    RTY: 50, M2K: 5,
+    CL: 1000, MCL: 100,
+    GC: 100, MGC: 10,
+    SI: 5000, SIL: 1000,
+    HG: 25000, MHG: 2500,
+    ZB: 1000, ZN: 1000, ZF: 1000,
+    NKD: 5, '6E': 125000, '6J': 12500000
   };
 
   /**
@@ -241,18 +259,222 @@
     return days[date.getDay()];
   }
 
+  /**
+   * CSVタイプを判定する
+   * @param {string[]} headers - CSVヘッダー
+   * @returns {'orders'|'performance'|'unknown'}
+   */
+  function detectCSVType(headers) {
+    var trimmed = [];
+    for (var i = 0; i < headers.length; i++) {
+      trimmed.push(headers[i].trim());
+    }
+
+    // Orders CSVは B/S, Status, avgPrice, Fill Time を持つ
+    var hasAll = true;
+    for (var j = 0; j < ORDERS_REQUIRED_HEADERS.length; j++) {
+      if (trimmed.indexOf(ORDERS_REQUIRED_HEADERS[j]) === -1) {
+        hasAll = false;
+        break;
+      }
+    }
+    if (hasAll) return 'orders';
+
+    // Performance CSVは pnl, buyPrice, sellPrice を持つ
+    var perfDetect = autoDetectMapping(headers);
+    if (perfDetect.missing.length === 0) return 'performance';
+
+    return 'unknown';
+  }
+
+  /**
+   * Orders CSVからFIFOマッチングでトレードデータを生成
+   * @param {{ headers: string[], rows: string[][] }} parsed
+   * @returns {Object[]} トレード配列
+   */
+  function normalizeOrdersToTrades(parsed) {
+    var headers = parsed.headers;
+    // ヘッダーインデックスマップ（trimして照合）
+    var colIdx = {};
+    for (var i = 0; i < headers.length; i++) {
+      colIdx[headers[i].trim()] = i;
+    }
+
+    // Filledの注文のみ抽出
+    var filledOrders = [];
+    for (var r = 0; r < parsed.rows.length; r++) {
+      var row = parsed.rows[r];
+      var status = (row[colIdx['Status']] || '').trim();
+      if (status !== 'Filled') continue;
+
+      var direction = (row[colIdx['B/S']] || '').trim();
+      if (direction !== 'Buy' && direction !== 'Sell') continue;
+
+      var product = (row[colIdx['Product']] || '').trim();
+      var contract = (row[colIdx['Contract']] || '').trim();
+      var avgPrice = parseFloat(row[colIdx['avgPrice']] || row[colIdx['Avg Fill Price']] || '0') || 0;
+      var qty = parseInt(row[colIdx['filledQty']] || row[colIdx['Filled Qty']] || '1', 10) || 1;
+      var fillTime = parseTimestamp(row[colIdx['Fill Time']] || '');
+      var orderId = (row[colIdx['orderId']] || row[colIdx['Order ID']] || '').trim();
+      var notionalStr = row[colIdx['Notional Value']] || '';
+      var notional = parsePnL(notionalStr);
+      var productDesc = (row[colIdx['Product Description']] || '').trim();
+
+      filledOrders.push({
+        direction: direction,
+        product: product,
+        contract: contract,
+        avgPrice: avgPrice,
+        qty: qty,
+        fillTime: fillTime,
+        orderId: orderId,
+        notional: notional,
+        productDescription: productDesc
+      });
+    }
+
+    // Fill Time昇順、同時刻はorderId昇順でソート
+    filledOrders.sort(function (a, b) {
+      var timeDiff = a.fillTime.getTime() - b.fillTime.getTime();
+      if (timeDiff !== 0) return timeDiff;
+      if (a.orderId < b.orderId) return -1;
+      if (a.orderId > b.orderId) return 1;
+      return 0;
+    });
+
+    // 商品ごとの乗数を Notional Value / avgPrice から推定
+    var multipliers = {};
+    for (var m = 0; m < filledOrders.length; m++) {
+      var fo = filledOrders[m];
+      if (!multipliers[fo.product] && fo.notional > 0 && fo.avgPrice > 0) {
+        multipliers[fo.product] = Math.round(fo.notional / fo.avgPrice);
+      }
+    }
+
+    // 商品ごとにFIFOマッチング
+    var positions = {}; // product -> { direction: 'Buy'|'Sell', queue: [{price, fillTime, orderId}] }
+    var trades = [];
+    var tradeId = 0;
+
+    for (var k = 0; k < filledOrders.length; k++) {
+      var order = filledOrders[k];
+      var prod = order.product;
+      var mult = multipliers[prod] || CONTRACT_MULTIPLIERS[prod] || 1;
+
+      if (!positions[prod]) {
+        positions[prod] = { direction: order.direction, queue: [] };
+      }
+      var pos = positions[prod];
+
+      if (pos.queue.length === 0 || pos.direction === order.direction) {
+        // 同方向 → ポジション積み増し
+        pos.direction = order.direction;
+        for (var q = 0; q < order.qty; q++) {
+          pos.queue.push({
+            price: order.avgPrice,
+            fillTime: order.fillTime,
+            orderId: order.orderId
+          });
+        }
+      } else {
+        // 反対方向 → FIFOでマッチング
+        var remaining = order.qty;
+        while (remaining > 0 && pos.queue.length > 0) {
+          var entry = pos.queue.shift();
+
+          var buyPrice, sellPrice, buyTime, sellTime, tradeDirection;
+          if (pos.direction === 'Buy') {
+            buyPrice = entry.price;
+            sellPrice = order.avgPrice;
+            buyTime = entry.fillTime;
+            sellTime = order.fillTime;
+            tradeDirection = 'Long';
+          } else {
+            buyPrice = order.avgPrice;
+            sellPrice = entry.price;
+            buyTime = order.fillTime;
+            sellTime = entry.fillTime;
+            tradeDirection = 'Short';
+          }
+
+          var pnl = (sellPrice - buyPrice) * mult;
+          var exitTime = sellTime.getTime() > buyTime.getTime() ? sellTime : buyTime;
+
+          tradeId++;
+          trades.push({
+            id: tradeId,
+            symbol: order.contract || prod,
+            qty: 1,
+            buyPrice: buyPrice,
+            sellPrice: sellPrice,
+            pnl: Math.round(pnl * 100) / 100,
+            boughtTimestamp: buyTime,
+            soldTimestamp: sellTime,
+            duration: calculateDuration(buyTime, sellTime),
+            commission: 0,
+            direction: tradeDirection,
+            productDescription: order.productDescription,
+            tradeDate: formatDate(exitTime),
+            dayOfWeek: getDayOfWeek(exitTime),
+            rawRow: {}
+          });
+
+          remaining--;
+        }
+
+        // 残りがあれば新規ポジション（ドテン）
+        if (remaining > 0) {
+          pos.direction = order.direction;
+          for (var rq = 0; rq < remaining; rq++) {
+            pos.queue.push({
+              price: order.avgPrice,
+              fillTime: order.fillTime,
+              orderId: order.orderId
+            });
+          }
+        }
+      }
+    }
+
+    return trades;
+  }
+
+  /**
+   * 2つのタイムスタンプからduration文字列を算出
+   * @param {Date} startTime
+   * @param {Date} endTime
+   * @returns {string} "1hr 23min 45sec" 形式
+   */
+  function calculateDuration(startTime, endTime) {
+    var diffMs = Math.abs(endTime.getTime() - startTime.getTime());
+    var totalSec = Math.floor(diffMs / 1000);
+    var hours = Math.floor(totalSec / 3600);
+    var minutes = Math.floor((totalSec % 3600) / 60);
+    var seconds = totalSec % 60;
+
+    var parts = [];
+    if (hours > 0) parts.push(hours + 'hr');
+    if (minutes > 0) parts.push(minutes + 'min');
+    if (seconds > 0 || parts.length === 0) parts.push(seconds + 'sec');
+    return parts.join(' ');
+  }
+
   // Export
   var CSVParser = {
     parseCSVText: parseCSVText,
     parseCSVLine: parseCSVLine,
     autoDetectMapping: autoDetectMapping,
     normalizeToTrades: normalizeToTrades,
+    detectCSVType: detectCSVType,
+    normalizeOrdersToTrades: normalizeOrdersToTrades,
+    calculateDuration: calculateDuration,
     parsePnL: parsePnL,
     parseTimestamp: parseTimestamp,
     formatDate: formatDate,
     getDayOfWeek: getDayOfWeek,
     REQUIRED_COLUMNS: REQUIRED_COLUMNS,
-    OPTIONAL_COLUMNS: OPTIONAL_COLUMNS
+    OPTIONAL_COLUMNS: OPTIONAL_COLUMNS,
+    CONTRACT_MULTIPLIERS: CONTRACT_MULTIPLIERS
   };
 
   if (typeof module !== 'undefined' && module.exports) {

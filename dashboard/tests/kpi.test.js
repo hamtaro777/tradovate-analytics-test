@@ -273,6 +273,164 @@ test('normalizeToTrades processes Performance CSV correctly', function () {
   assert.strictEqual(trades[0].sellPrice, 25271);
 });
 
+// === detectCSVType ===
+console.log('\n=== CSV Type Detection Tests ===\n');
+
+test('detectCSVType identifies Orders CSV', function () {
+  var headers = ['orderId', 'Account', 'Order ID', 'B/S', 'Contract', 'Product', 'Product Description', 'avgPrice', 'filledQty', 'Fill Time', 'Status'];
+  assert.strictEqual(CSVParser.detectCSVType(headers), 'orders');
+});
+
+test('detectCSVType identifies Performance CSV', function () {
+  var headers = ['symbol', '_priceFormat', '_priceFormatType', '_tickSize', 'buyFillId', 'sellFillId', 'qty', 'buyPrice', 'sellPrice', 'pnl', 'boughtTimestamp', 'soldTimestamp', 'duration'];
+  assert.strictEqual(CSVParser.detectCSVType(headers), 'performance');
+});
+
+test('detectCSVType returns unknown for unrecognized headers', function () {
+  var headers = ['foo', 'bar', 'baz'];
+  assert.strictEqual(CSVParser.detectCSVType(headers), 'unknown');
+});
+
+// === normalizeOrdersToTrades ===
+console.log('\n=== Orders CSV FIFO Matching Tests ===\n');
+
+test('normalizeOrdersToTrades filters out non-Filled orders', function () {
+  var csvText = [
+    'orderId,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,Status,Notional Value',
+    '1, Buy,MESH6,MES,Micro E-mini S&P 500,6961.25,1,02/12/2026 01:33:16, Filled,"34,806.25"',
+    '2, Sell,MESH6,MES,Micro E-mini S&P 500,,,, Canceled,',
+    '3, Sell,MESH6,MES,Micro E-mini S&P 500,6966.00,1,02/12/2026 01:33:46, Filled,"34,830.00"'
+  ].join('\n');
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeOrdersToTrades(parsed);
+  assert.strictEqual(trades.length, 1);
+});
+
+test('normalizeOrdersToTrades calculates PnL correctly for long trades', function () {
+  var csvText = [
+    'orderId,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,Status,Notional Value',
+    '1, Buy,MESH6,MES,Micro E-mini S&P 500,6961.25,1,02/12/2026 01:33:16, Filled,"34,806.25"',
+    '2, Sell,MESH6,MES,Micro E-mini S&P 500,6966.00,1,02/12/2026 01:33:46, Filled,"34,830.00"'
+  ].join('\n');
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeOrdersToTrades(parsed);
+  assert.strictEqual(trades.length, 1);
+  assert.strictEqual(trades[0].direction, 'Long');
+  assert.strictEqual(trades[0].buyPrice, 6961.25);
+  assert.strictEqual(trades[0].sellPrice, 6966.00);
+  // MES multiplier = 34806.25 / 6961.25 ≈ 5
+  var expectedPnL = (6966.00 - 6961.25) * 5;
+  assert.ok(Math.abs(trades[0].pnl - expectedPnL) < 0.01, 'Expected PnL ' + expectedPnL + ', got ' + trades[0].pnl);
+});
+
+test('normalizeOrdersToTrades calculates PnL correctly for short trades', function () {
+  var csvText = [
+    'orderId,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,Status,Notional Value',
+    '1, Sell,NQH6,NQ,E-Mini NASDAQ 100,25271.0,1,02/11/2026 15:34:46, Filled,"505,420.00"',
+    '2, Buy,NQH6,NQ,E-Mini NASDAQ 100,25266.0,1,02/11/2026 16:10:55, Filled,"505,320.00"'
+  ].join('\n');
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeOrdersToTrades(parsed);
+  assert.strictEqual(trades.length, 1);
+  assert.strictEqual(trades[0].direction, 'Short');
+  assert.strictEqual(trades[0].buyPrice, 25266.0);
+  assert.strictEqual(trades[0].sellPrice, 25271.0);
+  // NQ multiplier = 505420 / 25271 ≈ 20
+  var expectedPnL = (25271.0 - 25266.0) * 20;
+  assert.ok(Math.abs(trades[0].pnl - expectedPnL) < 0.01, 'Expected PnL ' + expectedPnL + ', got ' + trades[0].pnl);
+});
+
+test('normalizeOrdersToTrades FIFO matches multiple orders correctly', function () {
+  var csvText = [
+    'orderId,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,Status,Notional Value',
+    '1, Buy,MESH6,MES,Micro E-mini S&P 500,6961.25,1,02/12/2026 01:33:16, Filled,"34,806.25"',
+    '2, Buy,MESH6,MES,Micro E-mini S&P 500,6962.25,1,02/12/2026 01:33:17, Filled,"34,811.25"',
+    '3, Sell,MESH6,MES,Micro E-mini S&P 500,6966.00,1,02/12/2026 01:33:46, Filled,"34,830.00"',
+    '4, Sell,MESH6,MES,Micro E-mini S&P 500,6963.00,1,02/12/2026 01:34:31, Filled,"34,815.00"'
+  ].join('\n');
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeOrdersToTrades(parsed);
+  assert.strictEqual(trades.length, 2);
+  // FIFO: first buy (6961.25) matched with first sell (6966.00)
+  assert.strictEqual(trades[0].buyPrice, 6961.25);
+  assert.strictEqual(trades[0].sellPrice, 6966.00);
+  assert.ok(Math.abs(trades[0].pnl - 23.75) < 0.01);
+  // FIFO: second buy (6962.25) matched with second sell (6963.00)
+  assert.strictEqual(trades[1].buyPrice, 6962.25);
+  assert.strictEqual(trades[1].sellPrice, 6963.00);
+  assert.ok(Math.abs(trades[1].pnl - 3.75) < 0.01);
+});
+
+test('normalizeOrdersToTrades total PnL matches Performance CSV', function () {
+  // 実際のOrders CSVデータから全Filled注文を使用してPnLの合計を検証
+  var fs = require('fs');
+  var ordersCsvPath = require('path').join(__dirname, '..', '..', 'Orders_tradovate.csv');
+  var perfCsvPath = require('path').join(__dirname, '..', '..', 'Performance_trdovate.csv');
+
+  var ordersText = fs.readFileSync(ordersCsvPath, 'utf8');
+  var perfText = fs.readFileSync(perfCsvPath, 'utf8');
+
+  var ordersParsed = CSVParser.parseCSVText(ordersText);
+  var ordersTrades = CSVParser.normalizeOrdersToTrades(ordersParsed);
+
+  var perfParsed = CSVParser.parseCSVText(perfText);
+  var perfMapping = CSVParser.autoDetectMapping(perfParsed.headers).mapping;
+  var perfTrades = CSVParser.normalizeToTrades(perfParsed, perfMapping);
+
+  var ordersTotalPnL = 0;
+  for (var i = 0; i < ordersTrades.length; i++) {
+    ordersTotalPnL += ordersTrades[i].pnl;
+  }
+  var perfTotalPnL = 0;
+  for (var j = 0; j < perfTrades.length; j++) {
+    perfTotalPnL += perfTrades[j].pnl;
+  }
+
+  assert.ok(
+    Math.abs(ordersTotalPnL - perfTotalPnL) < 0.01,
+    'Orders total PnL (' + ordersTotalPnL.toFixed(2) + ') should match Performance total PnL (' + perfTotalPnL.toFixed(2) + ')'
+  );
+  assert.strictEqual(ordersTrades.length, perfTrades.length, 'Trade count should match');
+});
+
+test('normalizeOrdersToTrades generates correct tradeDate and dayOfWeek', function () {
+  var csvText = [
+    'orderId,B/S,Contract,Product,Product Description,avgPrice,filledQty,Fill Time,Status,Notional Value',
+    '1, Buy,MESH6,MES,Micro E-mini S&P 500,6961.25,1,02/12/2026 01:33:16, Filled,"34,806.25"',
+    '2, Sell,MESH6,MES,Micro E-mini S&P 500,6966.00,1,02/12/2026 01:33:46, Filled,"34,830.00"'
+  ].join('\n');
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeOrdersToTrades(parsed);
+  assert.strictEqual(trades[0].tradeDate, '2026-02-12');
+  assert.ok(trades[0].dayOfWeek !== '', 'dayOfWeek should be set');
+});
+
+// === calculateDuration ===
+console.log('\n=== Duration Calculation Tests ===\n');
+
+test('calculateDuration formats seconds only', function () {
+  var start = new Date(2026, 1, 12, 1, 33, 16);
+  var end = new Date(2026, 1, 12, 1, 33, 46);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '30sec');
+});
+
+test('calculateDuration formats minutes and seconds', function () {
+  var start = new Date(2026, 1, 12, 1, 33, 0);
+  var end = new Date(2026, 1, 12, 1, 36, 40);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '3min 40sec');
+});
+
+test('calculateDuration formats hours, minutes, seconds', function () {
+  var start = new Date(2026, 1, 11, 15, 34, 46);
+  var end = new Date(2026, 1, 11, 16, 10, 55);
+  assert.strictEqual(CSVParser.calculateDuration(start, end), '36min 9sec');
+});
+
+test('calculateDuration handles zero difference', function () {
+  var t = new Date(2026, 1, 12, 1, 33, 16);
+  assert.strictEqual(CSVParser.calculateDuration(t, t), '0sec');
+});
+
 // === Summary ===
 console.log('\n─────────────────────────────');
 console.log('Results: ' + passed + ' passed, ' + failed + ' failed');

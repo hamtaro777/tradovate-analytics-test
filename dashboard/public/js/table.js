@@ -55,17 +55,24 @@
     var container = document.getElementById('trade-table-container');
     if (!container) return;
 
+    // directionフィールドがあるかチェック（Orders CSV由来の場合）
+    var hasDirection = allTrades.length > 0 && allTrades[0].direction && allTrades[0].direction !== '';
     var columns = [
       { key: 'id', label: '#', width: '50px' },
       { key: 'tradeDate', label: '日付', width: '100px' },
-      { key: 'symbol', label: 'シンボル', width: '100px' },
+      { key: 'symbol', label: 'シンボル', width: '100px' }
+    ];
+    if (hasDirection) {
+      columns.push({ key: 'direction', label: '方向', width: '70px' });
+    }
+    columns.push(
       { key: 'qty', label: '数量', width: '60px' },
       { key: 'buyPrice', label: 'エントリー', width: '100px' },
       { key: 'sellPrice', label: 'イグジット', width: '100px' },
       { key: 'pnl', label: '損益', width: '100px' },
       { key: 'commission', label: '手数料', width: '80px' },
       { key: 'duration', label: '保有時間', width: '100px' }
-    ];
+    );
 
     var html = '<div class="table-wrapper"><table class="trade-table">';
 
@@ -94,6 +101,10 @@
       html += '<td>' + trade.id + '</td>';
       html += '<td>' + trade.tradeDate + '</td>';
       html += '<td>' + trade.symbol + '</td>';
+      if (hasDirection) {
+        var dirClass = trade.direction === 'Long' ? 'dir-long' : (trade.direction === 'Short' ? 'dir-short' : '');
+        html += '<td class="' + dirClass + '">' + (trade.direction || '') + '</td>';
+      }
       html += '<td>' + trade.qty + '</td>';
       html += '<td>' + formatPrice(trade.buyPrice) + '</td>';
       html += '<td>' + formatPrice(trade.sellPrice) + '</td>';

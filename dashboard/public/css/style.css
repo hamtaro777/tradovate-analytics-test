@@ -539,6 +539,10 @@ td.pnl-negative {
   }
 }
 
+/* ==================== Direction Column ==================== */
+.dir-long { color: var(--green); font-weight: 600; }
+.dir-short { color: var(--red); font-weight: 600; }
+
 /* ==================== Scrollbar ==================== */
 ::-webkit-scrollbar {
   width: 8px;
