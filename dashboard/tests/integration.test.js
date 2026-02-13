@@ -111,11 +111,83 @@ test('Fills CSV: parse successfully', function () {
   assert.strictEqual(parsed.rows.length, 20);
 });
 
-test('Fills CSV: detect some columns but report missing', function () {
+test('Fills CSV: detected as fills format', function () {
   const parsed = CSVParser.parseCSVText(fillsCSV);
-  const detection = CSVParser.autoDetectMapping(parsed.headers);
-  // Fills CSV doesn't have buyPrice/sellPrice/pnl in the expected format
-  assert.ok(detection.mapping.symbol !== undefined || detection.missing.length > 0);
+  assert.strictEqual(CSVParser.detectCSVFormat(parsed.headers), 'fills');
+});
+
+test('Fills CSV: normalizeFillsToTrades produces 10 trades', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades.length, 10, 'Expected 10 trades, got ' + trades.length);
+});
+
+test('Fills CSV: NQH6 trade has $100 profit', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const nqTrade = trades.find(function (t) { return t.symbol === 'NQH6'; });
+  assert.ok(nqTrade, 'NQH6 trade should exist');
+  assert.ok(Math.abs(nqTrade.pnl - 100) < 0.01, 'NQH6 P&L should be $100, got $' + nqTrade.pnl);
+});
+
+test('Fills CSV: NQH6 trade commission is sum of both fills', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const nqTrade = trades.find(function (t) { return t.symbol === 'NQH6'; });
+  assert.ok(Math.abs(nqTrade.commission - 1.58) < 0.01, 'NQH6 commission should be $1.58 (0.79+0.79), got $' + nqTrade.commission);
+});
+
+test('Fills CSV: MESH6 first trade is $23.75 profit', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const mesTrades = trades.filter(function (t) { return t.symbol === 'MESH6'; });
+  // Sort by boughtTimestamp to get consistent order
+  mesTrades.sort(function (a, b) { return a.boughtTimestamp.getTime() - b.boughtTimestamp.getTime(); });
+  assert.ok(Math.abs(mesTrades[0].pnl - 23.75) < 0.01, 'First MES trade P&L should be $23.75, got $' + mesTrades[0].pnl);
+});
+
+test('Fills CSV: last 3 MESH6 trades are losses', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const mesTrades = trades.filter(function (t) { return t.symbol === 'MESH6'; });
+  mesTrades.sort(function (a, b) { return a.soldTimestamp.getTime() - b.soldTimestamp.getTime(); });
+  const lastThree = mesTrades.slice(-3);
+  assert.ok(lastThree[0].pnl < 0, 'Trade should be a loss: ' + lastThree[0].pnl);
+  assert.ok(lastThree[1].pnl < 0, 'Trade should be a loss: ' + lastThree[1].pnl);
+  assert.ok(lastThree[2].pnl < 0, 'Trade should be a loss: ' + lastThree[2].pnl);
+});
+
+test('Fills CSV: total P&L matches Performance CSV total', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const totalPnL = trades.reduce(function (sum, t) { return sum + t.pnl; }, 0);
+  // Performance CSV total: 100 + 23.75 + 22.50 + 3.75 + 11.25 + 8.75 + 10 - 15 - 12.50 - 16.25 = 136.25
+  const expectedTotal = 136.25;
+  assert.ok(Math.abs(totalPnL - expectedTotal) < 0.01, 'Total P&L should be $' + expectedTotal + ', got $' + totalPnL);
+});
+
+test('Fills CSV: total commission is sum of all fill commissions', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const totalComm = trades.reduce(function (sum, t) { return sum + t.commission; }, 0);
+  // 20 fills: NQ has 0.79*2 = 1.58, MES has 0.25*18 = 4.50 → total = 6.08
+  const expectedComm = 6.08;
+  assert.ok(Math.abs(totalComm - expectedComm) < 0.01, 'Total commission should be $' + expectedComm + ', got $' + totalComm);
+});
+
+test('Fills CSV: KPI calculations from Fills match expected values', function () {
+  const parsed = CSVParser.parseCSVText(fillsCSV);
+  const trades = CSVParser.normalizeFillsToTrades(parsed);
+  const kpis = KPI.calculateAllKPIs(trades);
+
+  assert.strictEqual(kpis.totalTrades, 10);
+  assert.strictEqual(kpis.winCount, 7);
+  assert.strictEqual(kpis.lossCount, 3);
+  assert.ok(Math.abs(kpis.winRate - 70) < 0.01, 'Win rate should be 70%, got ' + kpis.winRate);
+  assert.ok(kpis.profitFactor > 1.0, 'Profit factor should be > 1');
+  assert.ok(kpis.totalPnL > 0, 'Total P&L should be positive');
+  // Net P&L = totalPnL - totalCommission
+  assert.ok(Math.abs(kpis.netPnL - (kpis.totalPnL - kpis.totalCommission)) < 0.01);
 });
 
 // Orders CSV
