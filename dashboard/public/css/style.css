@@ -245,6 +245,69 @@ body {
 .kpi-negative { border-left: 3px solid var(--negative); }
 .kpi-neutral { border-left: 3px solid var(--accent); }
 
+/* ==================== Extended KPI Cards ==================== */
+#extended-kpi-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.kpi-direction {
+  min-width: 0;
+}
+
+.kpi-direction-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.kpi-direction-info {
+  flex: 1;
+}
+
+.kpi-donut-container {
+  position: relative;
+  width: 80px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
+.kpi-donut-labels {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.2;
+}
+
+.donut-label-long {
+  color: var(--positive);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.donut-label-short {
+  color: var(--negative);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.kpi-trade-detail {
+  grid-column: span 2;
+}
+
+.kpi-trade-detail .kpi-sub {
+  font-size: 0.75rem;
+  line-height: 1.4;
+  word-break: break-word;
+  white-space: normal;
+}
+
 /* ==================== Charts ==================== */
 .charts-grid {
   display: grid;
@@ -698,8 +761,13 @@ td.pnl-negative {
     grid-template-columns: 1fr;
   }
 
-  #kpi-cards {
+  #kpi-cards,
+  #extended-kpi-cards {
     grid-template-columns: repeat(2, 1fr);
+  }
+
+  .kpi-trade-detail {
+    grid-column: span 1;
   }
 
   .main-container {
@@ -734,8 +802,13 @@ td.pnl-negative {
 }
 
 @media (max-width: 480px) {
-  #kpi-cards {
+  #kpi-cards,
+  #extended-kpi-cards {
     grid-template-columns: 1fr;
+  }
+
+  .kpi-trade-detail {
+    grid-column: span 1;
   }
 
   html {
