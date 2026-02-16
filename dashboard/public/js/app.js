@@ -8,6 +8,7 @@
   var state = {
     trades: [],
     kpis: null,
+    extendedKpis: null,
     dailySummary: [],
     dayOfWeekSummary: [],
     csvHeaders: [],
@@ -136,6 +137,7 @@
       }
 
       state.kpis = KPI.calculateAllKPIs(state.trades);
+      state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
       state.dailySummary = KPI.calculateDailySummary(state.trades);
       state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
       state.isLoaded = true;
@@ -251,6 +253,7 @@
     try {
       state.trades = CSVParser.normalizeToTrades(parsed, mapping);
       state.kpis = KPI.calculateAllKPIs(state.trades);
+      state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
       state.dailySummary = KPI.calculateDailySummary(state.trades);
       state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
       state.isLoaded = true;
@@ -272,6 +275,7 @@
   function renderDashboard() {
     renderFileInfo();
     renderKPICards();
+    renderExtendedKPICards();
     PnLCalendar.init('pnl-calendar', state.dailySummary);
     renderCharts();
     TradeTable.initTable(state.trades);
@@ -350,6 +354,169 @@
       html += '</div>';
     }
     container.innerHTML = html;
+  }
+
+  /**
+   * 拡張KPIカード描画（画像に対応する13項目）
+   */
+  function renderExtendedKPICards() {
+    var container = document.getElementById('extended-kpi-cards');
+    if (!container || !state.extendedKpis || !state.kpis) return;
+
+    var ext = state.extendedKpis;
+    var kpis = state.kpis;
+    var html = '';
+
+    // 1. Most Active Day
+    html += '<div class="kpi-card kpi-neutral">';
+    html += '<div class="kpi-label">Most Active Day</div>';
+    html += '<div class="kpi-value">' + escapeHtml(ext.mostActiveDay) + '</div>';
+    html += '<div class="kpi-sub">' + ext.mostActiveDayDates + ' active days, ' +
+            ext.mostActiveDayCount + ' total trades, ' +
+            ext.avgTradesPerDay.toFixed(2) + ' avg trades/day</div>';
+    html += '</div>';
+
+    // 2. Most Profitable Day
+    html += '<div class="kpi-card kpi-positive">';
+    html += '<div class="kpi-label">Most Profitable Day</div>';
+    html += '<div class="kpi-value">' + escapeHtml(ext.mostProfitableDay) + '</div>';
+    html += '<div class="kpi-sub">' + KPI.formatCurrency(ext.mostProfitablePnL) + '</div>';
+    html += '</div>';
+
+    // 3. Least Profitable Day
+    html += '<div class="kpi-card kpi-negative">';
+    html += '<div class="kpi-label">Least Profitable Day</div>';
+    html += '<div class="kpi-value">' + escapeHtml(ext.leastProfitableDay) + '</div>';
+    html += '<div class="kpi-sub">' + KPI.formatCurrency(ext.leastProfitablePnL) + '</div>';
+    html += '</div>';
+
+    // 4. Total Number of Trades
+    html += '<div class="kpi-card kpi-neutral">';
+    html += '<div class="kpi-label">Total Number of Trades</div>';
+    html += '<div class="kpi-value">' + kpis.totalTrades + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 5. Total Number of Lots Traded
+    html += '<div class="kpi-card kpi-neutral">';
+    html += '<div class="kpi-label">Total Number of Lots Traded</div>';
+    html += '<div class="kpi-value">' + ext.totalLots + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 6. Average Trade Duration
+    html += '<div class="kpi-card kpi-neutral">';
+    html += '<div class="kpi-label">Average Trade Duration</div>';
+    html += '<div class="kpi-value">' + KPI.formatDurationFromSeconds(ext.avgDuration) + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 7. Average Win Duration
+    html += '<div class="kpi-card kpi-positive">';
+    html += '<div class="kpi-label">Average Win Duration</div>';
+    html += '<div class="kpi-value">' + KPI.formatDurationFromSeconds(ext.avgWinDuration) + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 8. Average Loss Duration
+    html += '<div class="kpi-card kpi-negative">';
+    html += '<div class="kpi-label">Average Loss Duration</div>';
+    html += '<div class="kpi-value">' + KPI.formatDurationFromSeconds(ext.avgLossDuration) + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 9. Avg Winning Trade
+    html += '<div class="kpi-card kpi-positive">';
+    html += '<div class="kpi-label">Avg Winning Trade</div>';
+    html += '<div class="kpi-value">' + KPI.formatCurrency(kpis.avgWin) + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 10. Avg Losing Trade
+    html += '<div class="kpi-card kpi-negative">';
+    html += '<div class="kpi-label">Avg Losing Trade</div>';
+    html += '<div class="kpi-value">' + KPI.formatCurrency(-kpis.avgLoss) + '</div>';
+    html += '<div class="kpi-sub"></div>';
+    html += '</div>';
+
+    // 11. Trade Direction % (with donut chart)
+    html += '<div class="kpi-card kpi-neutral kpi-direction">';
+    html += '<div class="kpi-label">Trade Direction %</div>';
+    html += '<div class="kpi-direction-content">';
+    html += '<div class="kpi-direction-info">';
+    html += '<div class="kpi-value">' + ext.longPercent.toFixed(2) + '%</div>';
+    html += '</div>';
+    html += '<div class="kpi-donut-container">';
+    html += '<canvas id="donut-direction" width="80" height="80"></canvas>';
+    html += '<div class="kpi-donut-labels">';
+    html += '<span class="donut-label-long">' + ext.longCount + '</span>';
+    html += '<span class="donut-label-short">' + ext.shortCount + '</span>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+    html += '</div>';
+
+    // 12. Best Trade
+    var bestDetail = ext.bestTrade ? KPI.formatTradeDetail(ext.bestTrade) : '';
+    html += '<div class="kpi-card kpi-positive kpi-trade-detail">';
+    html += '<div class="kpi-label">Best Trade</div>';
+    html += '<div class="kpi-value">' + (ext.bestTrade ? KPI.formatCurrency(ext.bestTrade.pnl) : '$0.00') + '</div>';
+    html += '<div class="kpi-sub">' + escapeHtml(bestDetail) + '</div>';
+    html += '</div>';
+
+    // 13. Worst Trade
+    var worstDetail = ext.worstTrade ? KPI.formatTradeDetail(ext.worstTrade) : '';
+    html += '<div class="kpi-card kpi-negative kpi-trade-detail">';
+    html += '<div class="kpi-label">Worst Trade</div>';
+    html += '<div class="kpi-value">' + (ext.worstTrade ? KPI.formatCurrency(ext.worstTrade.pnl) : '$0.00') + '</div>';
+    html += '<div class="kpi-sub">' + escapeHtml(worstDetail) + '</div>';
+    html += '</div>';
+
+    container.innerHTML = html;
+
+    // Draw donut chart
+    drawDirectionDonut(ext.longCount, ext.shortCount);
+  }
+
+  /**
+   * Trade Direction のドーナツチャートを描画
+   */
+  function drawDirectionDonut(longCount, shortCount) {
+    var canvas = document.getElementById('donut-direction');
+    if (!canvas) return;
+    var ctx = canvas.getContext('2d');
+    var total = longCount + shortCount;
+    if (total === 0) return;
+
+    var dpr = window.devicePixelRatio || 1;
+    var size = 80;
+    canvas.width = size * dpr;
+    canvas.height = size * dpr;
+    canvas.style.width = size + 'px';
+    canvas.style.height = size + 'px';
+    ctx.scale(dpr, dpr);
+
+    var cx = size / 2;
+    var cy = size / 2;
+    var radius = 32;
+    var lineWidth = 10;
+    var longAngle = (longCount / total) * 2 * Math.PI;
+
+    // Long portion (green)
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, -Math.PI / 2, -Math.PI / 2 + longAngle);
+    ctx.strokeStyle = '#22c55e';
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'butt';
+    ctx.stroke();
+
+    // Short portion (red)
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, -Math.PI / 2 + longAngle, -Math.PI / 2 + 2 * Math.PI);
+    ctx.strokeStyle = '#ef4444';
+    ctx.lineWidth = lineWidth;
+    ctx.lineCap = 'butt';
+    ctx.stroke();
   }
 
   /**

@@ -237,6 +237,13 @@
         rawRow: rowObj
       };
 
+      // direction が空の場合、タイムスタンプから推定
+      if (!trade.direction || trade.direction === '') {
+        if (trade.boughtTimestamp.getTime() > 0 && trade.soldTimestamp.getTime() > 0) {
+          trade.direction = trade.boughtTimestamp <= trade.soldTimestamp ? 'Long' : 'Short';
+        }
+      }
+
       // トレード日（約定日ベース）
       var tradeDate = trade.soldTimestamp.getTime() > 0 ? trade.soldTimestamp : trade.boughtTimestamp;
       trade.tradeDate = formatDate(tradeDate);

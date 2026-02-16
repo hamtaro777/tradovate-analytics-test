@@ -232,17 +232,259 @@
     return value.toFixed(2);
   }
 
+  /**
+   * 曜日の日本語→英語マッピング
+   */
+  var DAY_NAME_MAP = {
+    '日': 'Sunday', '月': 'Monday', '火': 'Tuesday',
+    '水': 'Wednesday', '木': 'Thursday', '金': 'Friday', '土': 'Saturday'
+  };
+
+  /**
+   * Duration文字列を秒数に変換
+   * "1hr 5min 30sec" → 3930, "36min 8sec" → 2168, "29sec" → 29
+   * @param {string} durationStr
+   * @returns {number} 秒数（パース不能なら0）
+   */
+  function parseDurationToSeconds(durationStr) {
+    if (!durationStr || typeof durationStr !== 'string') return 0;
+    var totalSec = 0;
+    var hrMatch = durationStr.match(/(\d+)\s*hr/);
+    var minMatch = durationStr.match(/(\d+)\s*min/);
+    var secMatch = durationStr.match(/(\d+)\s*sec/);
+    if (hrMatch) totalSec += parseInt(hrMatch[1], 10) * 3600;
+    if (minMatch) totalSec += parseInt(minMatch[1], 10) * 60;
+    if (secMatch) totalSec += parseInt(secMatch[1], 10);
+    return totalSec;
+  }
+
+  /**
+   * 秒数をフォーマット済み文字列に変換
+   * @param {number} totalSeconds
+   * @returns {string} "X min Y sec" or "X hr Y min Z sec"
+   */
+  function formatDurationFromSeconds(totalSeconds) {
+    if (!totalSeconds || totalSeconds <= 0) return '0 sec';
+    totalSeconds = Math.round(totalSeconds);
+    var hours = Math.floor(totalSeconds / 3600);
+    var minutes = Math.floor((totalSeconds % 3600) / 60);
+    var seconds = totalSeconds % 60;
+    var parts = [];
+    if (hours > 0) parts.push(hours + ' hr');
+    if (minutes > 0) parts.push(minutes + ' min');
+    if (seconds > 0 || parts.length === 0) parts.push(seconds + ' sec');
+    return parts.join(' ');
+  }
+
+  /**
+   * 拡張KPIを算出（画像に表示される追加項目）
+   * @param {Object[]} trades - トレード配列
+   * @returns {Object} 拡張KPI結果
+   */
+  function calculateExtendedKPIs(trades) {
+    if (!trades || trades.length === 0) {
+      return getEmptyExtendedKPIs();
+    }
+
+    // --- Most Active / Most Profitable / Least Profitable Day ---
+    var dowStats = {};
+    var activeDays = {}; // 日付ごとにトレードがあるかカウント
+
+    for (var i = 0; i < trades.length; i++) {
+      var t = trades[i];
+      var dow = t.dayOfWeek;
+
+      if (!dowStats[dow]) {
+        dowStats[dow] = { pnl: 0, tradeCount: 0, dates: {} };
+      }
+      dowStats[dow].pnl += t.pnl;
+      dowStats[dow].tradeCount++;
+      dowStats[dow].dates[t.tradeDate] = true;
+
+      // 全体のアクティブ日数
+      activeDays[t.tradeDate] = true;
+    }
+
+    var totalActiveDays = Object.keys(activeDays).length;
+    var totalTrades = trades.length;
+
+    // Most Active Day
+    var mostActiveDay = null;
+    var mostActiveDayCount = 0;
+    var mostActiveDayDates = 0;
+    var dowKeys = Object.keys(dowStats);
+    for (var d = 0; d < dowKeys.length; d++) {
+      var stat = dowStats[dowKeys[d]];
+      if (stat.tradeCount > mostActiveDayCount) {
+        mostActiveDayCount = stat.tradeCount;
+        mostActiveDay = dowKeys[d];
+        mostActiveDayDates = Object.keys(stat.dates).length;
+      }
+    }
+
+    // Most Profitable Day
+    var mostProfitableDay = null;
+    var mostProfitablePnL = -Infinity;
+    for (var p = 0; p < dowKeys.length; p++) {
+      if (dowStats[dowKeys[p]].pnl > mostProfitablePnL) {
+        mostProfitablePnL = dowStats[dowKeys[p]].pnl;
+        mostProfitableDay = dowKeys[p];
+      }
+    }
+
+    // Least Profitable Day
+    var leastProfitableDay = null;
+    var leastProfitablePnL = Infinity;
+    for (var lp = 0; lp < dowKeys.length; lp++) {
+      if (dowStats[dowKeys[lp]].pnl < leastProfitablePnL) {
+        leastProfitablePnL = dowStats[dowKeys[lp]].pnl;
+        leastProfitableDay = dowKeys[lp];
+      }
+    }
+
+    // --- Total Lots Traded ---
+    var totalLots = 0;
+    for (var li = 0; li < trades.length; li++) {
+      totalLots += trades[li].qty || 1;
+    }
+
+    // --- Average Durations ---
+    var allDurations = [];
+    var winDurations = [];
+    var lossDurations = [];
+    for (var di = 0; di < trades.length; di++) {
+      var dur = parseDurationToSeconds(trades[di].duration);
+      if (dur > 0) {
+        allDurations.push(dur);
+        if (trades[di].pnl > 0) {
+          winDurations.push(dur);
+        } else if (trades[di].pnl < 0) {
+          lossDurations.push(dur);
+        }
+      }
+    }
+    var avgDuration = allDurations.length > 0 ? sum(allDurations) / allDurations.length : 0;
+    var avgWinDuration = winDurations.length > 0 ? sum(winDurations) / winDurations.length : 0;
+    var avgLossDuration = lossDurations.length > 0 ? sum(lossDurations) / lossDurations.length : 0;
+
+    // --- Trade Direction ---
+    var longCount = 0;
+    var shortCount = 0;
+    for (var ti = 0; ti < trades.length; ti++) {
+      var dir = (trades[ti].direction || '').toLowerCase();
+      if (dir === 'long' || dir === 'buy') {
+        longCount++;
+      } else if (dir === 'short' || dir === 'sell') {
+        shortCount++;
+      }
+    }
+    var longPercent = totalTrades > 0 ? (longCount / totalTrades) * 100 : 0;
+
+    // --- Best / Worst Trade ---
+    var bestTrade = trades[0];
+    var worstTrade = trades[0];
+    for (var bt = 1; bt < trades.length; bt++) {
+      if (trades[bt].pnl > bestTrade.pnl) bestTrade = trades[bt];
+      if (trades[bt].pnl < worstTrade.pnl) worstTrade = trades[bt];
+    }
+
+    return {
+      mostActiveDay: mostActiveDay ? (DAY_NAME_MAP[mostActiveDay] || mostActiveDay) : '-',
+      mostActiveDayCount: mostActiveDayCount,
+      mostActiveDayDates: mostActiveDayDates,
+      totalActiveDays: totalActiveDays,
+      avgTradesPerDay: totalActiveDays > 0 ? totalTrades / totalActiveDays : 0,
+      mostProfitableDay: mostProfitableDay ? (DAY_NAME_MAP[mostProfitableDay] || mostProfitableDay) : '-',
+      mostProfitablePnL: mostProfitablePnL === -Infinity ? 0 : mostProfitablePnL,
+      leastProfitableDay: leastProfitableDay ? (DAY_NAME_MAP[leastProfitableDay] || leastProfitableDay) : '-',
+      leastProfitablePnL: leastProfitablePnL === Infinity ? 0 : leastProfitablePnL,
+      totalLots: totalLots,
+      avgDuration: avgDuration,
+      avgWinDuration: avgWinDuration,
+      avgLossDuration: avgLossDuration,
+      longCount: longCount,
+      shortCount: shortCount,
+      longPercent: longPercent,
+      bestTrade: bestTrade,
+      worstTrade: worstTrade
+    };
+  }
+
+  /**
+   * 空の拡張KPIオブジェクト
+   */
+  function getEmptyExtendedKPIs() {
+    return {
+      mostActiveDay: '-', mostActiveDayCount: 0, mostActiveDayDates: 0,
+      totalActiveDays: 0, avgTradesPerDay: 0,
+      mostProfitableDay: '-', mostProfitablePnL: 0,
+      leastProfitableDay: '-', leastProfitablePnL: 0,
+      totalLots: 0,
+      avgDuration: 0, avgWinDuration: 0, avgLossDuration: 0,
+      longCount: 0, shortCount: 0, longPercent: 0,
+      bestTrade: null, worstTrade: null
+    };
+  }
+
+  /**
+   * トレードの方向を推定（direction列が空の場合）
+   * @param {Object} trade
+   * @returns {string} 'Long' | 'Short'
+   */
+  function inferDirection(trade) {
+    if (trade.direction && trade.direction !== '') return trade.direction;
+    if (trade.boughtTimestamp && trade.soldTimestamp) {
+      return trade.boughtTimestamp <= trade.soldTimestamp ? 'Long' : 'Short';
+    }
+    return 'Long';
+  }
+
+  /**
+   * トレードの詳細を人間が読める形式でフォーマット
+   * @param {Object} trade
+   * @returns {string}
+   */
+  function formatTradeDetail(trade) {
+    if (!trade) return '';
+    var dir = inferDirection(trade);
+    var sym = trade.symbol || '';
+    // シンボルの先頭文字を除去して表示用にする
+    var displaySymbol = sym;
+    var entry = trade.buyPrice;
+    var exit = trade.sellPrice;
+    var ts = '';
+    if (trade.soldTimestamp && trade.soldTimestamp.getTime() > 0) {
+      var d = trade.soldTimestamp;
+      ts = String(d.getMonth() + 1).padStart(2, '0') + '/' +
+           String(d.getDate()).padStart(2, '0') + '/' +
+           d.getFullYear() + ' ' +
+           String(d.getHours()).padStart(2, '0') + ':' +
+           String(d.getMinutes()).padStart(2, '0') + ':' +
+           String(d.getSeconds()).padStart(2, '0');
+    }
+    return dir + ' ' + (trade.qty || 1) + ' /' + displaySymbol +
+           ' @ ' + entry + ', Exited @ ' + exit +
+           (ts ? ', ' + ts : '');
+  }
+
   // Export
   var KPI = {
     calculateAllKPIs: calculateAllKPIs,
+    calculateExtendedKPIs: calculateExtendedKPIs,
     calculateDailySummary: calculateDailySummary,
     calculateDayOfWeekSummary: calculateDayOfWeekSummary,
     calculateStreaks: calculateStreaks,
     getEmptyKPIs: getEmptyKPIs,
+    getEmptyExtendedKPIs: getEmptyExtendedKPIs,
+    parseDurationToSeconds: parseDurationToSeconds,
+    formatDurationFromSeconds: formatDurationFromSeconds,
+    formatTradeDetail: formatTradeDetail,
+    inferDirection: inferDirection,
     formatCurrency: formatCurrency,
     formatPercent: formatPercent,
     formatProfitFactor: formatProfitFactor,
-    sum: sum
+    sum: sum,
+    DAY_NAME_MAP: DAY_NAME_MAP
   };
 
   if (typeof module !== 'undefined' && module.exports) {
