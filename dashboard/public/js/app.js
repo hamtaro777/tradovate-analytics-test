@@ -406,16 +406,9 @@
         color: kpis.winRate >= 50 ? 'positive' : 'negative'
       },
       {
-        label: 'Avg Win',
-        value: KPI.formatCurrency(kpis.avgWin),
-        sub: '最大: ' + KPI.formatCurrency(kpis.maxWin),
-        color: 'positive'
-      },
-      {
-        label: 'Avg Loss',
-        value: KPI.formatCurrency(kpis.avgLoss),
-        sub: '最大: ' + KPI.formatCurrency(Math.abs(kpis.maxLoss)),
-        color: 'negative'
+        label: 'Avg Win / Avg Loss',
+        type: 'bar',
+        color: 'neutral'
       },
       {
         label: 'Profit Factor',
@@ -434,11 +427,30 @@
     var html = '';
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
-      html += '<div class="kpi-card kpi-' + card.color + '">';
-      html += '<div class="kpi-label">' + card.label + '</div>';
-      html += '<div class="kpi-value">' + card.value + '</div>';
-      html += '<div class="kpi-sub">' + card.sub + '</div>';
-      html += '</div>';
+      if (card.type === 'bar') {
+        var ratio = kpis.avgLoss > 0 ? (kpis.avgWin / kpis.avgLoss).toFixed(2) : '∞';
+        var winPct = (kpis.avgWin + kpis.avgLoss) > 0
+          ? (kpis.avgWin / (kpis.avgWin + kpis.avgLoss)) * 100
+          : 50;
+        html += '<div class="kpi-card kpi-' + card.color + '">';
+        html += '<div class="kpi-label">' + card.label + '</div>';
+        html += '<div class="kpi-value">' + ratio + '</div>';
+        html += '<div class="kpi-bar-container">';
+        html += '<div class="kpi-bar-fill kpi-bar-win" style="width:' + winPct.toFixed(1) + '%"></div>';
+        html += '<div class="kpi-bar-fill kpi-bar-loss" style="width:' + (100 - winPct).toFixed(1) + '%"></div>';
+        html += '</div>';
+        html += '<div class="kpi-bar-labels">';
+        html += '<span class="cal-positive">' + KPI.formatCurrency(kpis.avgWin) + '</span>';
+        html += '<span class="cal-negative">' + KPI.formatCurrency(-kpis.avgLoss) + '</span>';
+        html += '</div>';
+        html += '</div>';
+      } else {
+        html += '<div class="kpi-card kpi-' + card.color + '">';
+        html += '<div class="kpi-label">' + card.label + '</div>';
+        html += '<div class="kpi-value">' + card.value + '</div>';
+        html += '<div class="kpi-sub">' + card.sub + '</div>';
+        html += '</div>';
+      }
     }
     container.innerHTML = html;
   }
