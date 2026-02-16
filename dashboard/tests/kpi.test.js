@@ -419,6 +419,113 @@ test('normalizeFillsToTrades FIFO matches multiple fills correctly', function ()
   assert.ok(Math.abs(trades[1].pnl - 22.50) < 0.01, 'Trade 2: Expected $22.50, got $' + trades[1].pnl);
 });
 
+// === CME Trading Date Tests ===
+console.log('\n=== CME Trading Date Tests ===\n');
+
+test('getCTOffset returns -6 for CST (February)', function () {
+  var d = new Date(Date.UTC(2026, 1, 11, 16, 0, 0)); // Feb 11, 2026
+  assert.strictEqual(CSVParser.getCTOffset(d), -6);
+});
+
+test('getCTOffset returns -5 for CDT (July)', function () {
+  var d = new Date(Date.UTC(2026, 6, 15, 16, 0, 0)); // Jul 15, 2026
+  assert.strictEqual(CSVParser.getCTOffset(d), -5);
+});
+
+test('getCTOffset DST boundary: just before DST start is CST', function () {
+  // 2026 DST starts Mar 8 at 2:00AM CST = 8:00AM UTC
+  var d = new Date(Date.UTC(2026, 2, 8, 7, 59, 59)); // 1 sec before DST
+  assert.strictEqual(CSVParser.getCTOffset(d), -6);
+});
+
+test('getCTOffset DST boundary: at DST start is CDT', function () {
+  var d = new Date(Date.UTC(2026, 2, 8, 8, 0, 0)); // exactly DST start
+  assert.strictEqual(CSVParser.getCTOffset(d), -5);
+});
+
+test('getCTOffset DST boundary: just before DST end is CDT', function () {
+  // 2026 DST ends Nov 1 at 2:00AM CDT = 7:00AM UTC
+  var d = new Date(Date.UTC(2026, 10, 1, 6, 59, 59)); // 1 sec before end
+  assert.strictEqual(CSVParser.getCTOffset(d), -5);
+});
+
+test('getCTOffset DST boundary: at DST end is CST', function () {
+  var d = new Date(Date.UTC(2026, 10, 1, 7, 0, 0)); // exactly DST end
+  assert.strictEqual(CSVParser.getCTOffset(d), -6);
+});
+
+test('getCMETradingDate before 5PM CT returns same day (CST)', function () {
+  // Feb 11, 2026 10:00 AM CST = 16:00 UTC
+  var d = new Date(Date.UTC(2026, 1, 11, 16, 0, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-02-11');
+});
+
+test('getCMETradingDate at exactly 5PM CT returns next day (CST)', function () {
+  // Feb 11, 2026 5:00 PM CST = 23:00 UTC
+  var d = new Date(Date.UTC(2026, 1, 11, 23, 0, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-02-12');
+});
+
+test('getCMETradingDate just before 5PM CT returns same day (CST)', function () {
+  // Feb 11, 2026 4:59 PM CST = 22:59 UTC
+  var d = new Date(Date.UTC(2026, 1, 11, 22, 59, 59));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-02-11');
+});
+
+test('getCMETradingDate after 5PM CT returns next day (CST)', function () {
+  // Feb 11, 2026 5:30 PM CST = 23:30 UTC
+  var d = new Date(Date.UTC(2026, 1, 11, 23, 30, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-02-12');
+});
+
+test('getCMETradingDate before 5PM CDT returns same day (summer)', function () {
+  // Jul 15, 2026 10:00 AM CDT = 15:00 UTC
+  var d = new Date(Date.UTC(2026, 6, 15, 15, 0, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-07-15');
+});
+
+test('getCMETradingDate at 5PM CDT returns next day (summer)', function () {
+  // Jul 15, 2026 5:00 PM CDT = 22:00 UTC
+  var d = new Date(Date.UTC(2026, 6, 15, 22, 0, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-07-16');
+});
+
+test('getCMETradingDate late night CT maps to current day', function () {
+  // Feb 12, 2026 2:00 AM CST = 08:00 UTC
+  var d = new Date(Date.UTC(2026, 1, 12, 8, 0, 0));
+  assert.strictEqual(CSVParser.getCMETradingDate(d), '2026-02-12');
+});
+
+test('getDayOfWeekFromDateStr returns correct day for Wednesday', function () {
+  assert.strictEqual(CSVParser.getDayOfWeekFromDateStr('2026-02-11'), '水');
+});
+
+test('getDayOfWeekFromDateStr returns correct day for Thursday', function () {
+  assert.strictEqual(CSVParser.getDayOfWeekFromDateStr('2026-02-12'), '木');
+});
+
+test('normalizeFillsToTrades assigns CME trading date for daytime trade', function () {
+  // _timestamp: 2026-02-11 16:33:46.071Z = UTC 16:33 = CST 10:33 AM → trading date Feb 11
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 16:33:16.562Z,2026-02-11,0,1,6961.25,true,1,1,1,02/12/2026 01:33:16,2/12/26,ACC, Buy,1,6961.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 16:33:46.071Z,2026-02-11,1,1,6966.0,true,1,2,2,02/12/2026 01:33:46,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades[0].tradeDate, '2026-02-11');
+  assert.strictEqual(trades[0].dayOfWeek, '水');
+});
+
+test('normalizeFillsToTrades assigns next CME trading day for after 5PM CT', function () {
+  // Sell at 2026-02-11 23:30:00Z = CST 5:30 PM → trading date Feb 12
+  var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
+    '1,1,100,2026-02-11 22:00:00.000Z,2026-02-11,0,1,6961.25,true,1,1,1,02/12/2026 07:00:00,2/12/26,ACC, Buy,1,6961.25,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25\n' +
+    '2,2,100,2026-02-11 23:30:00.000Z,2026-02-11,1,1,6966.0,true,1,2,2,02/12/2026 08:30:00,2/12/26,ACC, Sell,1,6966.00,-2,0,0.25,MESH6,MES,Micro E-mini S&P 500,0.25';
+  var parsed = CSVParser.parseCSVText(csvText);
+  var trades = CSVParser.normalizeFillsToTrades(parsed);
+  assert.strictEqual(trades[0].tradeDate, '2026-02-12');
+  assert.strictEqual(trades[0].dayOfWeek, '木');
+});
+
 // === Summary ===
 console.log('\n─────────────────────────────');
 console.log('Results: ' + passed + ' passed, ' + failed + ' failed');
