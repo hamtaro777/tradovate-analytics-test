@@ -267,6 +267,35 @@ body {
 .kpi-negative { border-left: 3px solid var(--negative); }
 .kpi-neutral { border-left: 3px solid var(--accent); }
 
+/* KPI Bar Graph (Avg Win / Avg Loss) */
+.kpi-bar-container {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  margin: 8px 0 6px;
+}
+
+.kpi-bar-fill {
+  height: 100%;
+  transition: width 0.3s ease;
+}
+
+.kpi-bar-win {
+  background: var(--positive);
+}
+
+.kpi-bar-loss {
+  background: var(--negative);
+}
+
+.kpi-bar-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 /* ==================== Extended KPI Cards ==================== */
 #extended-kpi-cards {
   display: grid;
