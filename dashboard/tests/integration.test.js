@@ -56,6 +56,16 @@ test('Performance CSV: first trade is NQH6 with $100 profit', function () {
   const trades = CSVParser.normalizeToTrades(parsed, mapping);
   assert.strictEqual(trades[0].symbol, 'NQH6');
   assert.strictEqual(trades[0].pnl, 100);
+  // NQ: $2.38 per side × 2 = $4.76
+  assert.ok(Math.abs(trades[0].commission - 4.76) < 0.01, 'NQH6 commission should be $4.76, got $' + trades[0].commission);
+});
+
+test('Performance CSV: MES trade commission calculated from rate table', function () {
+  const parsed = CSVParser.parseCSVText(perfCSV);
+  const mapping = CSVParser.autoDetectMapping(parsed.headers).mapping;
+  const trades = CSVParser.normalizeToTrades(parsed, mapping);
+  // Second trade is MESH6: $0.81 per side × 2 = $1.62
+  assert.ok(Math.abs(trades[1].commission - 1.62) < 0.01, 'MESH6 commission should be $1.62, got $' + trades[1].commission);
 });
 
 test('Performance CSV: last 3 trades are losses', function () {
@@ -130,11 +140,12 @@ test('Fills CSV: NQH6 trade has $100 profit', function () {
   assert.ok(Math.abs(nqTrade.pnl - 100) < 0.01, 'NQH6 P&L should be $100, got $' + nqTrade.pnl);
 });
 
-test('Fills CSV: NQH6 trade commission is sum of both fills', function () {
+test('Fills CSV: NQH6 trade commission calculated from rate table', function () {
   const parsed = CSVParser.parseCSVText(fillsCSV);
   const trades = CSVParser.normalizeFillsToTrades(parsed);
   const nqTrade = trades.find(function (t) { return t.symbol === 'NQH6'; });
-  assert.ok(Math.abs(nqTrade.commission - 1.58) < 0.01, 'NQH6 commission should be $1.58 (0.79+0.79), got $' + nqTrade.commission);
+  // NQ: $2.38 per side × 2 = $4.76
+  assert.ok(Math.abs(nqTrade.commission - 4.76) < 0.01, 'NQH6 commission should be $4.76, got $' + nqTrade.commission);
 });
 
 test('Fills CSV: MESH6 first trade is $23.75 profit', function () {
@@ -166,13 +177,13 @@ test('Fills CSV: total P&L matches Performance CSV total', function () {
   assert.ok(Math.abs(totalPnL - expectedTotal) < 0.01, 'Total P&L should be $' + expectedTotal + ', got $' + totalPnL);
 });
 
-test('Fills CSV: total commission is sum of all fill commissions', function () {
+test('Fills CSV: total commission calculated from rate table', function () {
   const parsed = CSVParser.parseCSVText(fillsCSV);
   const trades = CSVParser.normalizeFillsToTrades(parsed);
   const totalComm = trades.reduce(function (sum, t) { return sum + t.commission; }, 0);
-  // 20 fills: NQ has 0.79*2 = 1.58, MES has 0.25*18 = 4.50 → total = 6.08
-  const expectedComm = 6.08;
-  assert.ok(Math.abs(totalComm - expectedComm) < 0.01, 'Total commission should be $' + expectedComm + ', got $' + totalComm);
+  // NQ: $4.76 × 1 trade + MES: $1.62 × 9 trades = $19.34
+  const expectedComm = 4.76 + 1.62 * 9;
+  assert.ok(Math.abs(totalComm - expectedComm) < 0.01, 'Total commission should be $' + expectedComm.toFixed(2) + ', got $' + totalComm.toFixed(2));
 });
 
 test('Fills CSV: KPI calculations from Fills match expected values', function () {
