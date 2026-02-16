@@ -244,10 +244,10 @@
         }
       }
 
-      // トレード日（約定日ベース）
-      var tradeDate = trade.soldTimestamp.getTime() > 0 ? trade.soldTimestamp : trade.boughtTimestamp;
-      trade.tradeDate = formatDate(tradeDate);
-      trade.dayOfWeek = getDayOfWeek(tradeDate);
+      // トレード日（CME営業日ベース：CT 17:00区切り）
+      var tradeTimestamp = trade.soldTimestamp.getTime() > 0 ? trade.soldTimestamp : trade.boughtTimestamp;
+      trade.tradeDate = getCMETradingDate(tradeTimestamp);
+      trade.dayOfWeek = getDayOfWeekFromDateStr(trade.tradeDate);
 
       trades.push(trade);
     }
@@ -441,7 +441,8 @@
     var soldTs = sellFill.timestamp;
     var duration = calculateDuration(boughtTs, soldTs);
 
-    var tradeDate = soldTs.getTime() > 0 ? soldTs : boughtTs;
+    var tradeTimestamp = soldTs.getTime() > 0 ? soldTs : boughtTs;
+    var tradeDateStr = getCMETradingDate(tradeTimestamp);
 
     return {
       id: id,
@@ -456,8 +457,8 @@
       commission: commission,
       direction: buyFill.timestamp <= sellFill.timestamp ? 'Long' : 'Short',
       productDescription: buyFill.productDescription || sellFill.productDescription,
-      tradeDate: formatDate(tradeDate),
-      dayOfWeek: getDayOfWeek(tradeDate),
+      tradeDate: tradeDateStr,
+      dayOfWeek: getDayOfWeekFromDateStr(tradeDateStr),
       rawRow: { buy: buyFill.rawRow, sell: sellFill.rawRow }
     };
   }
@@ -504,6 +505,84 @@
     return days[date.getDay()];
   }
 
+  /**
+   * シカゴ時間（CT）のUTCオフセットを返す（DST考慮）
+   * CST = UTC-6, CDT = UTC-5
+   * 米国DST: 3月第2日曜 2:00AM CT開始、11月第1日曜 2:00AM CT終了
+   * @param {Date} date - UTC基準のDateオブジェクト
+   * @returns {number} UTCオフセット（時間単位）: -6 (CST) or -5 (CDT)
+   */
+  function getCTOffset(date) {
+    var year = date.getUTCFullYear();
+
+    // 3月第2日曜日を計算
+    var marchDow = new Date(Date.UTC(year, 2, 1)).getUTCDay();
+    var daysToFirstSunday = (7 - marchDow) % 7;
+    var secondSundayDate = 1 + daysToFirstSunday + 7;
+    // DST開始: 3月第2日曜 2:00AM CST = 8:00AM UTC
+    var dstStart = Date.UTC(year, 2, secondSundayDate, 8, 0, 0);
+
+    // 11月第1日曜日を計算
+    var novDow = new Date(Date.UTC(year, 10, 1)).getUTCDay();
+    var daysToNovSunday = (7 - novDow) % 7;
+    var firstSundayDate = 1 + daysToNovSunday;
+    // DST終了: 11月第1日曜 2:00AM CDT = 7:00AM UTC
+    var dstEnd = Date.UTC(year, 10, firstSundayDate, 7, 0, 0);
+
+    var utcMs = date.getTime();
+    if (utcMs >= dstStart && utcMs < dstEnd) {
+      return -5; // CDT
+    }
+    return -6; // CST
+  }
+
+  /**
+   * CME営業日を判定
+   * CME先物の1日はシカゴ時間（CT）17:00で区切られる
+   * CT 17:00以降のトレードは翌営業日として扱う
+   * @param {Date} date - トレードのタイムスタンプ
+   * @returns {string} YYYY-MM-DD形式のCME営業日
+   */
+  function getCMETradingDate(date) {
+    if (!date || date.getTime() <= 0) return formatDate(new Date(0));
+
+    // UTCミリ秒を取得
+    var utcMs = date.getTime();
+
+    // シカゴ時間に変換
+    var ctOffsetHours = getCTOffset(date);
+    var ctMs = utcMs + ctOffsetHours * 60 * 60 * 1000;
+    var ctDate = new Date(ctMs);
+
+    // CT時刻で17時以降なら翌日の営業日
+    var ctHour = ctDate.getUTCHours();
+    if (ctHour >= 17) {
+      ctDate = new Date(ctMs + 24 * 60 * 60 * 1000);
+    }
+
+    // YYYY-MM-DD形式で返す
+    var y = ctDate.getUTCFullYear();
+    var m = String(ctDate.getUTCMonth() + 1).padStart(2, '0');
+    var d = String(ctDate.getUTCDate()).padStart(2, '0');
+    return y + '-' + m + '-' + d;
+  }
+
+  /**
+   * YYYY-MM-DD文字列から曜日を取得（日本語）
+   * CME営業日の曜日判定に使用
+   * @param {string} dateStr - YYYY-MM-DD形式の日付文字列
+   * @returns {string} 日本語の曜日
+   */
+  function getDayOfWeekFromDateStr(dateStr) {
+    var parts = dateStr.split('-');
+    var y = parseInt(parts[0], 10);
+    var m = parseInt(parts[1], 10) - 1;
+    var d = parseInt(parts[2], 10);
+    var date = new Date(Date.UTC(y, m, d));
+    var days = ['日', '月', '火', '水', '木', '金', '土'];
+    return days[date.getUTCDay()];
+  }
+
   // Export
   var CSVParser = {
     parseCSVText: parseCSVText,
@@ -518,6 +597,9 @@
     parseTimestamp: parseTimestamp,
     formatDate: formatDate,
     getDayOfWeek: getDayOfWeek,
+    getCTOffset: getCTOffset,
+    getCMETradingDate: getCMETradingDate,
+    getDayOfWeekFromDateStr: getDayOfWeekFromDateStr,
     REQUIRED_COLUMNS: REQUIRED_COLUMNS,
     OPTIONAL_COLUMNS: OPTIONAL_COLUMNS,
     PRODUCT_MULTIPLIERS: PRODUCT_MULTIPLIERS
