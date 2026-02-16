@@ -197,6 +197,19 @@ body {
   font-size: 0.9rem;
 }
 
+.saved-info {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+.btn-danger-outline {
+  color: var(--negative);
+  border-color: var(--negative);
+}
+.btn-danger-outline:hover {
+  background: var(--negative-bg);
+}
+
 /* ==================== KPI Cards ==================== */
 #kpi-cards {
   display: grid;

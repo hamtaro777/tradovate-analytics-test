@@ -23,6 +23,26 @@
   function init() {
     setupFileUpload();
     setupMappingModal();
+
+    // localStorageに保存済みデータがあれば自動読み込み
+    if (typeof TradeStorage !== 'undefined' && TradeStorage.hasSaved()) {
+      var saved = TradeStorage.load();
+      if (saved && saved.trades && saved.trades.length > 0) {
+        state.trades = saved.trades;
+        state.fileName = saved.fileName || '(保存済みデータ)';
+        state.kpis = KPI.calculateAllKPIs(state.trades);
+        state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
+        state.dailySummary = KPI.calculateDailySummary(state.trades);
+        state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+        state.isLoaded = true;
+        state.savedAt = saved.savedAt;
+
+        renderDashboard();
+        showSection('dashboard');
+        return;
+      }
+    }
+
     showSection('upload');
   }
 
@@ -142,6 +162,7 @@
       state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
       state.isLoaded = true;
 
+      saveToLocalStorage();
       renderDashboard();
       showSection('dashboard');
       hideStatus();
@@ -258,6 +279,7 @@
       state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
       state.isLoaded = true;
 
+      saveToLocalStorage();
       renderDashboard();
       showSection('dashboard');
       hideStatus();
@@ -287,13 +309,38 @@
   function renderFileInfo() {
     var el = document.getElementById('file-info');
     if (!el) return;
-    el.innerHTML = '<span class="file-name">' + escapeHtml(state.fileName) + '</span>' +
-      '<span class="trade-count">' + state.trades.length + ' トレード</span>' +
-      '<button id="btn-new-upload" class="btn-secondary btn-sm">別のCSVを読み込む</button>';
+
+    var html = '<span class="file-name">' + escapeHtml(state.fileName) + '</span>' +
+      '<span class="trade-count">' + state.trades.length + ' トレード</span>';
+
+    if (state.savedAt) {
+      var savedDate = new Date(state.savedAt);
+      var savedStr = savedDate.getFullYear() + '/' +
+        String(savedDate.getMonth() + 1).padStart(2, '0') + '/' +
+        String(savedDate.getDate()).padStart(2, '0') + ' ' +
+        String(savedDate.getHours()).padStart(2, '0') + ':' +
+        String(savedDate.getMinutes()).padStart(2, '0');
+      html += '<span class="saved-info">保存済み: ' + savedStr + '</span>';
+    }
+
+    html += '<button id="btn-new-upload" class="btn-secondary btn-sm">別のCSVを読み込む</button>';
+    html += '<button id="btn-clear-storage" class="btn-secondary btn-sm btn-danger-outline">保存データを削除</button>';
+
+    el.innerHTML = html;
 
     document.getElementById('btn-new-upload').addEventListener('click', function () {
       state.isLoaded = false;
       showSection('upload');
+    });
+
+    document.getElementById('btn-clear-storage').addEventListener('click', function () {
+      if (typeof TradeStorage !== 'undefined') {
+        TradeStorage.clear();
+        state.savedAt = null;
+        showSuccess('保存データを削除しました。');
+        state.isLoaded = false;
+        showSection('upload');
+      }
     });
   }
 
@@ -634,6 +681,22 @@
           saveBtn.textContent = 'Google Sheetsに保存';
         });
     });
+  }
+
+  /**
+   * localStorageにトレードデータを保存
+   */
+  function saveToLocalStorage() {
+    if (typeof TradeStorage === 'undefined') return;
+
+    var success = TradeStorage.save({
+      trades: state.trades,
+      fileName: state.fileName
+    });
+
+    if (success) {
+      state.savedAt = new Date().toISOString();
+    }
   }
 
   // ==================== UIヘルパー ====================
