@@ -358,15 +358,29 @@
     });
 
     document.getElementById('btn-clear-storage').addEventListener('click', function () {
-      if (typeof TradeStorage !== 'undefined') {
-        TradeStorage.clear();
-        state.trades = [];
-        state.fileNames = [];
-        state.savedAt = null;
-        state.isLoaded = false;
-        showSuccess('保存データを削除しました。');
-        showSection('upload');
+      if (typeof TradeStorage === 'undefined') return;
+      var btn = document.getElementById('btn-clear-storage');
+      if (!btn.dataset.confirmed) {
+        btn.dataset.confirmed = 'pending';
+        btn.textContent = '本当に削除しますか？';
+        btn.classList.add('btn-danger-solid');
+        setTimeout(function () {
+          if (btn.dataset.confirmed === 'pending') {
+            delete btn.dataset.confirmed;
+            btn.textContent = '保存データを削除';
+            btn.classList.remove('btn-danger-solid');
+          }
+        }, 3000);
+        return;
       }
+      delete btn.dataset.confirmed;
+      TradeStorage.clear();
+      state.trades = [];
+      state.fileNames = [];
+      state.savedAt = null;
+      state.isLoaded = false;
+      showSuccess('保存データを削除しました。');
+      showSection('upload');
     });
   }
 
