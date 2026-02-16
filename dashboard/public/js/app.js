@@ -37,8 +37,8 @@
         state.isLoaded = true;
         state.savedAt = saved.savedAt;
 
-        renderDashboard();
         showSection('dashboard');
+        renderDashboard();
         return;
       }
     }
@@ -312,8 +312,8 @@
     state.isLoaded = true;
 
     saveToLocalStorage();
-    renderDashboard();
     showSection('dashboard');
+    renderDashboard();
   }
 
   /**
