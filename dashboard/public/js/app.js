@@ -34,6 +34,7 @@
         state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
         state.dailySummary = KPI.calculateDailySummary(state.trades);
         state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+        state.durationBuckets = KPI.calculateDurationBuckets(state.trades);
         state.isLoaded = true;
         state.savedAt = saved.savedAt;
 
@@ -305,6 +306,7 @@
     state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
     state.dailySummary = KPI.calculateDailySummary(state.trades);
     state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+    state.durationBuckets = KPI.calculateDurationBuckets(state.trades);
     state.isLoaded = true;
 
     saveToLocalStorage();
@@ -666,10 +668,14 @@
     var dailyCanvas = document.getElementById('chart-daily-pnl');
     var cumCanvas = document.getElementById('chart-cumulative-pnl');
     var dowCanvas = document.getElementById('chart-day-of-week');
+    var durCountCanvas = document.getElementById('chart-duration-count');
+    var durWinRateCanvas = document.getElementById('chart-duration-winrate');
 
     if (dailyCanvas) Charts.drawDailyPnLChart(dailyCanvas, state.dailySummary);
     if (cumCanvas) Charts.drawCumulativePnLChart(cumCanvas, state.dailySummary);
     if (dowCanvas) Charts.drawDayOfWeekChart(dowCanvas, state.dayOfWeekSummary);
+    if (durCountCanvas) Charts.drawDurationTradeCountChart(durCountCanvas, state.durationBuckets);
+    if (durWinRateCanvas) Charts.drawDurationWinRateChart(durWinRateCanvas, state.durationBuckets);
 
     // リサイズ対応
     var resizeTimer;
@@ -680,6 +686,8 @@
           if (dailyCanvas) Charts.drawDailyPnLChart(dailyCanvas, state.dailySummary);
           if (cumCanvas) Charts.drawCumulativePnLChart(cumCanvas, state.dailySummary);
           if (dowCanvas) Charts.drawDayOfWeekChart(dowCanvas, state.dayOfWeekSummary);
+          if (durCountCanvas) Charts.drawDurationTradeCountChart(durCountCanvas, state.durationBuckets);
+          if (durWinRateCanvas) Charts.drawDurationWinRateChart(durWinRateCanvas, state.durationBuckets);
         }
       }, 200);
     });

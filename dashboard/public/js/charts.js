@@ -301,6 +301,152 @@
     }
   }
 
+  /**
+   * 保有時間別トレード数 横棒グラフ
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object[]} durationBuckets
+   */
+  function drawDurationTradeCountChart(canvas, durationBuckets) {
+    if (!durationBuckets || durationBuckets.length === 0) return;
+    var ctx = canvas.getContext('2d');
+    setupCanvas(canvas, ctx);
+
+    var width = canvas.width;
+    var height = canvas.height;
+    var padLeft = 90;
+    var padRight = 50;
+    var padTop = 36;
+    var padBottom = 30;
+    var chartW = width - padLeft - padRight;
+    var chartH = height - padTop - padBottom;
+    var n = durationBuckets.length;
+    var barHeight = Math.min(28, (chartH / n) * 0.65);
+    var gap = (chartH - barHeight * n) / (n + 1);
+
+    var maxCount = 1;
+    for (var i = 0; i < n; i++) {
+      if (durationBuckets[i].tradeCount > maxCount) maxCount = durationBuckets[i].tradeCount;
+    }
+
+    // 背景
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // タイトル
+    ctx.fillStyle = COLORS.textLight;
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('保有時間別トレード数', width / 2, 20);
+
+    // 棒グラフ
+    for (var j = 0; j < n; j++) {
+      var bucket = durationBuckets[j];
+      var y = padTop + gap + j * (barHeight + gap);
+      var barW = maxCount > 0 ? (bucket.tradeCount / maxCount) * chartW : 0;
+      if (barW < 1 && bucket.tradeCount > 0) barW = 4;
+
+      // ラベル（左側）
+      ctx.fillStyle = COLORS.text;
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(bucket.label, padLeft - 8, y + barHeight / 2 + 4);
+
+      // バー
+      ctx.fillStyle = COLORS.line;
+      roundRect(ctx, padLeft, y, Math.max(barW, 0), barHeight, 3);
+
+      // カウントラベル
+      ctx.fillStyle = COLORS.textLight;
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText(String(bucket.tradeCount), padLeft + barW + 6, y + barHeight / 2 + 4);
+    }
+  }
+
+  /**
+   * 保有時間別勝率 横棒グラフ
+   * @param {HTMLCanvasElement} canvas
+   * @param {Object[]} durationBuckets
+   */
+  function drawDurationWinRateChart(canvas, durationBuckets) {
+    if (!durationBuckets || durationBuckets.length === 0) return;
+    var ctx = canvas.getContext('2d');
+    setupCanvas(canvas, ctx);
+
+    var width = canvas.width;
+    var height = canvas.height;
+    var padLeft = 90;
+    var padRight = 50;
+    var padTop = 36;
+    var padBottom = 30;
+    var chartW = width - padLeft - padRight;
+    var chartH = height - padTop - padBottom;
+    var n = durationBuckets.length;
+    var barHeight = Math.min(28, (chartH / n) * 0.65);
+    var gap = (chartH - barHeight * n) / (n + 1);
+
+    // 背景
+    ctx.fillStyle = COLORS.bg;
+    ctx.fillRect(0, 0, width, height);
+
+    // タイトル
+    ctx.fillStyle = COLORS.textLight;
+    ctx.font = 'bold 14px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('保有時間別勝率', width / 2, 20);
+
+    // 50%ライン
+    var fiftyX = padLeft + chartW * 0.5;
+    ctx.save();
+    ctx.strokeStyle = COLORS.text;
+    ctx.globalAlpha = 0.4;
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 4]);
+    ctx.beginPath();
+    ctx.moveTo(fiftyX, padTop);
+    ctx.lineTo(fiftyX, height - padBottom);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    ctx.fillStyle = COLORS.text;
+    ctx.font = '10px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('50%', fiftyX, height - padBottom + 14);
+
+    // 棒グラフ
+    for (var j = 0; j < n; j++) {
+      var bucket = durationBuckets[j];
+      var y = padTop + gap + j * (barHeight + gap);
+      var barW = (bucket.winRate / 100) * chartW;
+      if (barW < 1 && bucket.tradeCount > 0) barW = 4;
+
+      // ラベル（左側）
+      ctx.fillStyle = COLORS.text;
+      ctx.font = '12px system-ui, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.fillText(bucket.label, padLeft - 8, y + barHeight / 2 + 4);
+
+      // バー（勝率50%以上は緑、以下は赤）
+      if (bucket.tradeCount > 0) {
+        ctx.fillStyle = bucket.winRate >= 50 ? COLORS.profit : COLORS.loss;
+        roundRect(ctx, padLeft, y, Math.max(barW, 0), barHeight, 3);
+      }
+
+      // パーセントラベル
+      ctx.fillStyle = COLORS.textLight;
+      ctx.font = 'bold 12px system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      if (bucket.tradeCount > 0) {
+        ctx.fillText(bucket.winRate.toFixed(1) + '%', padLeft + barW + 6, y + barHeight / 2 + 4);
+      } else {
+        ctx.fillStyle = COLORS.text;
+        ctx.font = '11px system-ui, sans-serif';
+        ctx.fillText('-', padLeft + 6, y + barHeight / 2 + 4);
+      }
+    }
+  }
+
   // ==================== ユーティリティ ====================
 
   function setupCanvas(canvas, ctx) {
@@ -358,6 +504,8 @@
     drawDailyPnLChart: drawDailyPnLChart,
     drawCumulativePnLChart: drawCumulativePnLChart,
     drawDayOfWeekChart: drawDayOfWeekChart,
+    drawDurationTradeCountChart: drawDurationTradeCountChart,
+    drawDurationWinRateChart: drawDurationWinRateChart,
     COLORS: COLORS
   };
 

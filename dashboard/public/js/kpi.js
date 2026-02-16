@@ -467,6 +467,57 @@
            (ts ? ', ' + ts : '');
   }
 
+  /**
+   * 保有時間バケット別のトレード数・勝率を算出
+   * @param {Object[]} trades
+   * @returns {Object[]} バケット別統計配列
+   */
+  function calculateDurationBuckets(trades) {
+    var buckets = [
+      { label: '0-5 min',   min: 0,     max: 300 },
+      { label: '5-15 min',  min: 300,   max: 900 },
+      { label: '15-30 min', min: 900,   max: 1800 },
+      { label: '30-60 min', min: 1800,  max: 3600 },
+      { label: '1-2 hr',    min: 3600,  max: 7200 },
+      { label: '2-4 hr',    min: 7200,  max: 14400 },
+      { label: '4hr+',      min: 14400, max: Infinity }
+    ];
+
+    var result = [];
+    for (var b = 0; b < buckets.length; b++) {
+      result.push({
+        label: buckets[b].label,
+        min: buckets[b].min,
+        max: buckets[b].max,
+        tradeCount: 0,
+        winCount: 0
+      });
+    }
+
+    if (!trades || trades.length === 0) return result;
+
+    for (var i = 0; i < trades.length; i++) {
+      var dur = parseDurationToSeconds(trades[i].duration);
+      if (dur <= 0) continue;
+
+      for (var j = 0; j < result.length; j++) {
+        if (dur >= result[j].min && dur < result[j].max) {
+          result[j].tradeCount++;
+          if (trades[i].pnl > 0) result[j].winCount++;
+          break;
+        }
+      }
+    }
+
+    for (var k = 0; k < result.length; k++) {
+      result[k].winRate = result[k].tradeCount > 0
+        ? (result[k].winCount / result[k].tradeCount) * 100
+        : 0;
+    }
+
+    return result;
+  }
+
   // Export
   var KPI = {
     calculateAllKPIs: calculateAllKPIs,
@@ -480,6 +531,7 @@
     formatDurationFromSeconds: formatDurationFromSeconds,
     formatTradeDetail: formatTradeDetail,
     inferDirection: inferDirection,
+    calculateDurationBuckets: calculateDurationBuckets,
     formatCurrency: formatCurrency,
     formatPercent: formatPercent,
     formatProfitFactor: formatProfitFactor,
