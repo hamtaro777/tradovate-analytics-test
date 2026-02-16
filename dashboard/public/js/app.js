@@ -13,7 +13,7 @@
     dayOfWeekSummary: [],
     csvHeaders: [],
     mapping: {},
-    fileName: '',
+    fileNames: [],
     isLoaded: false
   };
 
@@ -29,7 +29,7 @@
       var saved = TradeStorage.load();
       if (saved && saved.trades && saved.trades.length > 0) {
         state.trades = saved.trades;
-        state.fileName = saved.fileName || '(保存済みデータ)';
+        state.fileNames = saved.fileNames || [];
         state.kpis = KPI.calculateAllKPIs(state.trades);
         state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
         state.dailySummary = KPI.calculateDailySummary(state.trades);
@@ -89,7 +89,7 @@
       return;
     }
 
-    state.fileName = file.name;
+    state._currentFileName = file.name;
     showStatus('ファイルを読み込んでいます...');
 
     var reader = new FileReader();
@@ -149,22 +149,14 @@
     showStatus('Fills CSVからトレードデータを生成しています...');
 
     try {
-      state.trades = CSVParser.normalizeFillsToTrades(parsed);
+      var newTrades = CSVParser.normalizeFillsToTrades(parsed);
 
-      if (state.trades.length === 0) {
+      if (newTrades.length === 0) {
         showError('マッチするトレードが見つかりませんでした。Buy/Sellのペアが存在するか確認してください。');
         return;
       }
 
-      state.kpis = KPI.calculateAllKPIs(state.trades);
-      state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
-      state.dailySummary = KPI.calculateDailySummary(state.trades);
-      state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
-      state.isLoaded = true;
-
-      saveToLocalStorage();
-      renderDashboard();
-      showSection('dashboard');
+      applyMergedTrades(newTrades);
       hideStatus();
 
       // Google Sheets保存（設定済みの場合）
@@ -272,16 +264,9 @@
     showStatus('トレードデータを処理しています...');
 
     try {
-      state.trades = CSVParser.normalizeToTrades(parsed, mapping);
-      state.kpis = KPI.calculateAllKPIs(state.trades);
-      state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
-      state.dailySummary = KPI.calculateDailySummary(state.trades);
-      state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
-      state.isLoaded = true;
+      var newTrades = CSVParser.normalizeToTrades(parsed, mapping);
 
-      saveToLocalStorage();
-      renderDashboard();
-      showSection('dashboard');
+      applyMergedTrades(newTrades);
       hideStatus();
 
       // Google Sheets保存（設定済みの場合）
@@ -289,6 +274,46 @@
     } catch (err) {
       showError('データ処理中にエラーが発生しました: ' + err.message);
     }
+  }
+
+  /**
+   * 新規トレードを既存データにマージしてダッシュボード表示
+   * @param {Array} newTrades - CSVから生成された新しいトレード配列
+   */
+  function applyMergedTrades(newTrades) {
+    var fileName = state._currentFileName || '';
+
+    if (typeof TradeStorage !== 'undefined' && state.trades.length > 0) {
+      // 既存データがある場合はマージ
+      var result = TradeStorage.merge(state.trades, newTrades);
+      state.trades = result.merged;
+
+      if (result.skipped > 0 && result.added === 0) {
+        showSuccess('すべてのトレード（' + result.skipped + '件）が既に保存済みです。新規データはありません。');
+      } else if (result.skipped > 0) {
+        showSuccess(result.added + '件の新規トレードを追加しました（' + result.skipped + '件の重複をスキップ）。');
+      } else {
+        showSuccess(result.added + '件の新規トレードを追加しました。');
+      }
+    } else {
+      // 初回ロード
+      state.trades = newTrades;
+    }
+
+    // ファイル名を追加（重複なし）
+    if (fileName && state.fileNames.indexOf(fileName) === -1) {
+      state.fileNames.push(fileName);
+    }
+
+    state.kpis = KPI.calculateAllKPIs(state.trades);
+    state.extendedKpis = KPI.calculateExtendedKPIs(state.trades);
+    state.dailySummary = KPI.calculateDailySummary(state.trades);
+    state.dayOfWeekSummary = KPI.calculateDayOfWeekSummary(state.trades);
+    state.isLoaded = true;
+
+    saveToLocalStorage();
+    renderDashboard();
+    showSection('dashboard');
   }
 
   /**
@@ -310,7 +335,11 @@
     var el = document.getElementById('file-info');
     if (!el) return;
 
-    var html = '<span class="file-name">' + escapeHtml(state.fileName) + '</span>' +
+    var fileLabel = state.fileNames.length > 0
+      ? state.fileNames.map(escapeHtml).join(', ')
+      : '(保存済みデータ)';
+
+    var html = '<span class="file-name">' + fileLabel + '</span>' +
       '<span class="trade-count">' + state.trades.length + ' トレード</span>';
 
     if (state.savedAt) {
@@ -323,22 +352,23 @@
       html += '<span class="saved-info">保存済み: ' + savedStr + '</span>';
     }
 
-    html += '<button id="btn-new-upload" class="btn-secondary btn-sm">別のCSVを読み込む</button>';
+    html += '<button id="btn-new-upload" class="btn-secondary btn-sm">CSVを追加読み込み</button>';
     html += '<button id="btn-clear-storage" class="btn-secondary btn-sm btn-danger-outline">保存データを削除</button>';
 
     el.innerHTML = html;
 
     document.getElementById('btn-new-upload').addEventListener('click', function () {
-      state.isLoaded = false;
       showSection('upload');
     });
 
     document.getElementById('btn-clear-storage').addEventListener('click', function () {
       if (typeof TradeStorage !== 'undefined') {
         TradeStorage.clear();
+        state.trades = [];
+        state.fileNames = [];
         state.savedAt = null;
-        showSuccess('保存データを削除しました。');
         state.isLoaded = false;
+        showSuccess('保存データを削除しました。');
         showSection('upload');
       }
     });
@@ -691,7 +721,7 @@
 
     var success = TradeStorage.save({
       trades: state.trades,
-      fileName: state.fileName
+      fileNames: state.fileNames
     });
 
     if (success) {

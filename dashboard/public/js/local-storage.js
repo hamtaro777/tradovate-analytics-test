@@ -1,44 +1,147 @@
 /**
  * Local Storage Module
  * トレードデータをブラウザのlocalStorageに保存・読み込みする
+ * マージ・重複防止機能付き
  */
 (function (root) {
   'use strict';
 
   var STORAGE_KEY = 'tradovate_analytics_data';
-  var STORAGE_VERSION = 1;
+  var STORAGE_VERSION = 2;
+
+  /**
+   * トレードのフィンガープリントを生成（重複判定用）
+   * symbol + soldTimestamp + pnl + buyPrice + sellPrice の組み合わせで一意性を判定
+   * @param {Object} trade
+   * @returns {string}
+   */
+  function tradeFingerprint(trade) {
+    var sold = trade.soldTimestamp instanceof Date
+      ? trade.soldTimestamp.toISOString()
+      : String(trade.soldTimestamp || '');
+    var bought = trade.boughtTimestamp instanceof Date
+      ? trade.boughtTimestamp.toISOString()
+      : String(trade.boughtTimestamp || '');
+    return [
+      trade.symbol || '',
+      bought,
+      sold,
+      String(trade.pnl || 0),
+      String(trade.buyPrice || 0),
+      String(trade.sellPrice || 0),
+      String(trade.qty || 1)
+    ].join('|');
+  }
+
+  /**
+   * 既存トレードに新規トレードをマージ（重複を除外）
+   * @param {Array} existing - 既存のトレード配列
+   * @param {Array} newTrades - 新しいトレード配列
+   * @returns {{ merged: Array, added: number, skipped: number }}
+   */
+  function mergeTrades(existing, newTrades) {
+    var fingerprints = {};
+    for (var i = 0; i < existing.length; i++) {
+      fingerprints[tradeFingerprint(existing[i])] = true;
+    }
+
+    var merged = existing.slice();
+    var added = 0;
+    var skipped = 0;
+
+    for (var j = 0; j < newTrades.length; j++) {
+      var fp = tradeFingerprint(newTrades[j]);
+      if (fingerprints[fp]) {
+        skipped++;
+      } else {
+        fingerprints[fp] = true;
+        merged.push(newTrades[j]);
+        added++;
+      }
+    }
+
+    // soldTimestamp で時系列ソート
+    merged.sort(function (a, b) {
+      var tA = a.soldTimestamp instanceof Date ? a.soldTimestamp.getTime() : new Date(a.soldTimestamp).getTime();
+      var tB = b.soldTimestamp instanceof Date ? b.soldTimestamp.getTime() : new Date(b.soldTimestamp).getTime();
+      return tA - tB;
+    });
+
+    // IDを振り直し
+    for (var k = 0; k < merged.length; k++) {
+      merged[k].id = k + 1;
+    }
+
+    return { merged: merged, added: added, skipped: skipped };
+  }
+
+  /**
+   * トレードを直列化して保存用オブジェクトに変換
+   * @param {Object} trade
+   * @returns {Object}
+   */
+  function serializeTrade(t) {
+    return {
+      id: t.id,
+      symbol: t.symbol,
+      qty: t.qty,
+      buyPrice: t.buyPrice,
+      sellPrice: t.sellPrice,
+      pnl: t.pnl,
+      commission: t.commission,
+      boughtTimestamp: t.boughtTimestamp instanceof Date ? t.boughtTimestamp.toISOString() : t.boughtTimestamp,
+      soldTimestamp: t.soldTimestamp instanceof Date ? t.soldTimestamp.toISOString() : t.soldTimestamp,
+      duration: t.duration,
+      direction: t.direction,
+      productDescription: t.productDescription,
+      tradeDate: t.tradeDate,
+      dayOfWeek: t.dayOfWeek
+    };
+  }
+
+  /**
+   * 保存用オブジェクトからトレードオブジェクトを復元
+   * @param {Object} t
+   * @returns {Object}
+   */
+  function deserializeTrade(t) {
+    return {
+      id: t.id,
+      symbol: t.symbol,
+      qty: t.qty,
+      buyPrice: t.buyPrice,
+      sellPrice: t.sellPrice,
+      pnl: t.pnl,
+      commission: t.commission,
+      boughtTimestamp: new Date(t.boughtTimestamp),
+      soldTimestamp: new Date(t.soldTimestamp),
+      duration: t.duration,
+      direction: t.direction,
+      productDescription: t.productDescription,
+      tradeDate: t.tradeDate,
+      dayOfWeek: t.dayOfWeek
+    };
+  }
 
   /**
    * トレードデータをlocalStorageに保存
    * @param {Object} data - 保存するデータ
    * @param {Array} data.trades - トレード配列
-   * @param {string} data.fileName - CSVファイル名
+   * @param {string|string[]} data.fileNames - CSVファイル名（配列または単一文字列）
    * @returns {boolean} 保存成功フラグ
    */
   function saveTradeData(data) {
     try {
+      var fileNames = data.fileNames || [];
+      if (typeof fileNames === 'string') {
+        fileNames = [fileNames];
+      }
+
       var serialized = {
         version: STORAGE_VERSION,
         savedAt: new Date().toISOString(),
-        fileName: data.fileName || '',
-        trades: data.trades.map(function (t) {
-          return {
-            id: t.id,
-            symbol: t.symbol,
-            qty: t.qty,
-            buyPrice: t.buyPrice,
-            sellPrice: t.sellPrice,
-            pnl: t.pnl,
-            commission: t.commission,
-            boughtTimestamp: t.boughtTimestamp instanceof Date ? t.boughtTimestamp.toISOString() : t.boughtTimestamp,
-            soldTimestamp: t.soldTimestamp instanceof Date ? t.soldTimestamp.toISOString() : t.soldTimestamp,
-            duration: t.duration,
-            direction: t.direction,
-            productDescription: t.productDescription,
-            tradeDate: t.tradeDate,
-            dayOfWeek: t.dayOfWeek
-          };
-        })
+        fileNames: fileNames,
+        trades: data.trades.map(serializeTrade)
       };
 
       localStorage.setItem(STORAGE_KEY, JSON.stringify(serialized));
@@ -55,7 +158,7 @@
 
   /**
    * localStorageからトレードデータを読み込み
-   * @returns {Object|null} { trades: Array, fileName: string, savedAt: string } or null
+   * @returns {Object|null} { trades: Array, fileNames: string[], savedAt: string } or null
    */
   function loadTradeData() {
     try {
@@ -64,32 +167,25 @@
 
       var parsed = JSON.parse(raw);
 
-      if (!parsed || parsed.version !== STORAGE_VERSION || !Array.isArray(parsed.trades)) {
+      if (!parsed || !Array.isArray(parsed.trades)) {
         return null;
       }
 
-      var trades = parsed.trades.map(function (t) {
-        return {
-          id: t.id,
-          symbol: t.symbol,
-          qty: t.qty,
-          buyPrice: t.buyPrice,
-          sellPrice: t.sellPrice,
-          pnl: t.pnl,
-          commission: t.commission,
-          boughtTimestamp: new Date(t.boughtTimestamp),
-          soldTimestamp: new Date(t.soldTimestamp),
-          duration: t.duration,
-          direction: t.direction,
-          productDescription: t.productDescription,
-          tradeDate: t.tradeDate,
-          dayOfWeek: t.dayOfWeek
-        };
-      });
+      // v1 → v2 マイグレーション
+      var fileNames;
+      if (parsed.version === 1) {
+        fileNames = parsed.fileName ? [parsed.fileName] : [];
+      } else if (parsed.version === STORAGE_VERSION) {
+        fileNames = parsed.fileNames || [];
+      } else {
+        return null;
+      }
+
+      var trades = parsed.trades.map(deserializeTrade);
 
       return {
         trades: trades,
-        fileName: parsed.fileName,
+        fileNames: fileNames,
         savedAt: parsed.savedAt
       };
     } catch (e) {
@@ -129,6 +225,8 @@
     load: loadTradeData,
     clear: clearTradeData,
     hasSaved: hasSavedData,
+    merge: mergeTrades,
+    fingerprint: tradeFingerprint,
     _STORAGE_KEY: STORAGE_KEY
   };
 
