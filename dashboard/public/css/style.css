@@ -790,9 +790,17 @@ td.pnl-negative {
 }
 
 .cal-week-pnl {
-  font-size: 0.8rem;
+  font-size: 1.2rem;
   font-weight: 700;
   text-align: center;
+}
+
+.cal-week-summary-positive {
+  background: rgba(34, 197, 94, 0.15);
+}
+
+.cal-week-summary-negative {
+  background: rgba(239, 68, 68, 0.15);
 }
 
 /* ==================== Responsive ==================== */

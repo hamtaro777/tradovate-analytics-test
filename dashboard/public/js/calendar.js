@@ -235,7 +235,11 @@
 
       // 週サマリー
       var weekPnL = getWeeklyPnL(week.dates, dateMap);
-      html += '<div class="cal-week-summary">';
+      var weekSummaryClass = 'cal-week-summary';
+      if (weekPnL !== null) {
+        weekSummaryClass += weekPnL >= 0 ? ' cal-week-summary-positive' : ' cal-week-summary-negative';
+      }
+      html += '<div class="' + weekSummaryClass + '">';
       if (weekPnL !== null) {
         html += '<div class="cal-week-pnl ' + (weekPnL >= 0 ? 'cal-positive' : 'cal-negative') + '">';
         html += formatPnL(weekPnL);
