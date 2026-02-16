@@ -53,6 +53,50 @@
   };
 
   /**
+   * TradeDay 片道手数料テーブル（1枚あたり）
+   * https://tradeday.freshdesk.com/en/support/solutions/articles/103000008893
+   */
+  var COMMISSION_PER_SIDE = {
+    // Equity Index
+    'ES': 2.38, 'MES': 0.81, 'NQ': 2.38, 'MNQ': 0.81,
+    'RTY': 2.38, 'M2K': 0.81, 'NKD': 3.15, 'YM': 2.38, 'MYM': 0.81,
+    // FX
+    '6A': 2.60, '6B': 2.60, '6C': 2.60, '6E': 2.60, 'M6E': 0.70,
+    '6J': 2.60, '6S': 2.60, '6N': 2.60,
+    // Bonds / Rates
+    'ZT': 1.65, 'ZF': 1.65, 'ZN': 1.80, 'ZB': 1.87, 'UB': 1.95, 'TN': 1.80,
+    // Energy
+    'CL': 2.50, 'MCL': 0.96, 'QM': 2.20, 'QG': 1.50, 'NG': 2.60,
+    // Metals
+    'PL': 2.60, 'HG': 2.60, 'GC': 2.60, 'MGC': 0.96, 'SI': 2.60, 'SIL': 1.46,
+    // Agricultural
+    'HE': 3.10, 'LE': 3.10, 'ZS': 3.10, 'ZC': 3.10, 'ZL': 3.10, 'ZM': 3.10, 'ZW': 3.10
+  };
+
+  /**
+   * シンボルからプロダクトコードを抽出
+   * 例: "NQH6" → "NQ", "MESH6" → "MES", "M2KZ25" → "M2K"
+   * @param {string} symbol - 限月付きシンボル
+   * @returns {string} プロダクトコード
+   */
+  function extractProductCode(symbol) {
+    if (!symbol) return '';
+    // 末尾の限月コード（月[FGHJKMNQUVXZ] + 年[1-2桁]）を除去
+    return symbol.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, '');
+  }
+
+  /**
+   * プロダクトコードと数量から往復手数料を計算
+   * @param {string} productCode - プロダクトコード (例: "NQ", "MES")
+   * @param {number} qty - 数量
+   * @returns {number} 往復手数料
+   */
+  function calculateCommission(productCode, qty) {
+    var perSide = COMMISSION_PER_SIDE[productCode] || 0;
+    return Math.round(perSide * 2 * qty * 100) / 100;
+  }
+
+  /**
    * CSV文字列をパースして行の配列にする
    * @param {string} csvText - CSV文字列
    * @returns {{ headers: string[], rows: string[][] }}
@@ -221,17 +265,20 @@
         rowObj[parsed.headers[j]] = row[j] || '';
       }
 
+      var symbol = rowObj[mapping.symbol] || '';
+      var qty = parseInt(rowObj[mapping.qty], 10) || 1;
+
       var trade = {
         id: i + 1,
-        symbol: rowObj[mapping.symbol] || '',
-        qty: parseInt(rowObj[mapping.qty], 10) || 1,
+        symbol: symbol,
+        qty: qty,
         buyPrice: parseFloat(rowObj[mapping.buyPrice]) || 0,
         sellPrice: parseFloat(rowObj[mapping.sellPrice]) || 0,
         pnl: parsePnL(rowObj[mapping.pnl]),
         boughtTimestamp: parseTimestamp(rowObj[mapping.boughtTimestamp]),
         soldTimestamp: parseTimestamp(rowObj[mapping.soldTimestamp]),
         duration: rowObj[mapping.duration] || '',
-        commission: mapping.commission ? parseFloat(rowObj[mapping.commission]) || 0 : 0,
+        commission: calculateCommission(extractProductCode(symbol), qty),
         direction: mapping.direction ? rowObj[mapping.direction] : '',
         productDescription: mapping.productDescription ? rowObj[mapping.productDescription] : '',
         rawRow: rowObj
@@ -434,8 +481,7 @@
     // 浮動小数点の丸め（小数点2桁）
     pnl = Math.round(pnl * 100) / 100;
 
-    var commission = buyFill.commission + sellFill.commission;
-    commission = Math.round(commission * 100) / 100;
+    var commission = calculateCommission(product, 1);
 
     var boughtTs = buyFill.timestamp;
     var soldTs = sellFill.timestamp;
@@ -602,7 +648,10 @@
     getDayOfWeekFromDateStr: getDayOfWeekFromDateStr,
     REQUIRED_COLUMNS: REQUIRED_COLUMNS,
     OPTIONAL_COLUMNS: OPTIONAL_COLUMNS,
-    PRODUCT_MULTIPLIERS: PRODUCT_MULTIPLIERS
+    PRODUCT_MULTIPLIERS: PRODUCT_MULTIPLIERS,
+    COMMISSION_PER_SIDE: COMMISSION_PER_SIDE,
+    extractProductCode: extractProductCode,
+    calculateCommission: calculateCommission
   };
 
   if (typeof module !== 'undefined' && module.exports) {

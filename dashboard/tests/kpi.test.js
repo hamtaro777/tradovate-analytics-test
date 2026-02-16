@@ -25,16 +25,16 @@ console.log('\n=== KPI Calculator Tests ===\n');
 
 // テスト用トレードデータ
 const sampleTrades = [
-  { id: 1, symbol: 'NQH6', pnl: 100, commission: 0.79, tradeDate: '2026-02-11', dayOfWeek: '水' },
-  { id: 2, symbol: 'MESH6', pnl: 23.75, commission: 0.25, tradeDate: '2026-02-11', dayOfWeek: '水' },
-  { id: 3, symbol: 'MESH6', pnl: 22.50, commission: 0.25, tradeDate: '2026-02-11', dayOfWeek: '水' },
-  { id: 4, symbol: 'MESH6', pnl: 3.75, commission: 0.25, tradeDate: '2026-02-11', dayOfWeek: '水' },
-  { id: 5, symbol: 'MESH6', pnl: 11.25, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' },
-  { id: 6, symbol: 'MESH6', pnl: 8.75, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' },
-  { id: 7, symbol: 'MESH6', pnl: 10.00, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' },
-  { id: 8, symbol: 'MESH6', pnl: -15.00, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' },
-  { id: 9, symbol: 'MESH6', pnl: -12.50, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' },
-  { id: 10, symbol: 'MESH6', pnl: -16.25, commission: 0.25, tradeDate: '2026-02-12', dayOfWeek: '木' }
+  { id: 1, symbol: 'NQH6', pnl: 100, commission: 4.76, tradeDate: '2026-02-11', dayOfWeek: '水' },
+  { id: 2, symbol: 'MESH6', pnl: 23.75, commission: 1.62, tradeDate: '2026-02-11', dayOfWeek: '水' },
+  { id: 3, symbol: 'MESH6', pnl: 22.50, commission: 1.62, tradeDate: '2026-02-11', dayOfWeek: '水' },
+  { id: 4, symbol: 'MESH6', pnl: 3.75, commission: 1.62, tradeDate: '2026-02-11', dayOfWeek: '水' },
+  { id: 5, symbol: 'MESH6', pnl: 11.25, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' },
+  { id: 6, symbol: 'MESH6', pnl: 8.75, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' },
+  { id: 7, symbol: 'MESH6', pnl: 10.00, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' },
+  { id: 8, symbol: 'MESH6', pnl: -15.00, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' },
+  { id: 9, symbol: 'MESH6', pnl: -12.50, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' },
+  { id: 10, symbol: 'MESH6', pnl: -16.25, commission: 1.62, tradeDate: '2026-02-12', dayOfWeek: '木' }
 ];
 
 // === calculateAllKPIs ===
@@ -98,7 +98,7 @@ test('maxLoss is correct', function () {
 
 test('netPnL subtracts commissions', function () {
   const result = KPI.calculateAllKPIs(sampleTrades);
-  const totalComm = 0.79 + 0.25 * 9;
+  const totalComm = 4.76 + 1.62 * 9;
   assert.ok(Math.abs(result.netPnL - (result.totalPnL - totalComm)) < 0.01);
 });
 
@@ -351,6 +351,48 @@ test('ES multiplier is 50', function () {
   assert.strictEqual(CSVParser.PRODUCT_MULTIPLIERS['ES'], 50);
 });
 
+// === Commission Calculation ===
+console.log('\n=== Commission Calculation Tests ===\n');
+
+test('extractProductCode strips month and year from NQH6', function () {
+  assert.strictEqual(CSVParser.extractProductCode('NQH6'), 'NQ');
+});
+
+test('extractProductCode strips month and year from MESH6', function () {
+  assert.strictEqual(CSVParser.extractProductCode('MESH6'), 'MES');
+});
+
+test('extractProductCode strips month and year from M2KZ25', function () {
+  assert.strictEqual(CSVParser.extractProductCode('M2KZ25'), 'M2K');
+});
+
+test('extractProductCode strips month and year from ESZ5', function () {
+  assert.strictEqual(CSVParser.extractProductCode('ESZ5'), 'ES');
+});
+
+test('extractProductCode returns empty string for empty input', function () {
+  assert.strictEqual(CSVParser.extractProductCode(''), '');
+});
+
+test('calculateCommission returns round-trip for NQ qty 1', function () {
+  // NQ: $2.38 per side × 2 = $4.76
+  assert.ok(Math.abs(CSVParser.calculateCommission('NQ', 1) - 4.76) < 0.01);
+});
+
+test('calculateCommission returns round-trip for MES qty 1', function () {
+  // MES: $0.81 per side × 2 = $1.62
+  assert.ok(Math.abs(CSVParser.calculateCommission('MES', 1) - 1.62) < 0.01);
+});
+
+test('calculateCommission scales by qty', function () {
+  // NQ: $2.38 × 2 × 3 = $14.28
+  assert.ok(Math.abs(CSVParser.calculateCommission('NQ', 3) - 14.28) < 0.01);
+});
+
+test('calculateCommission returns 0 for unknown product', function () {
+  assert.strictEqual(CSVParser.calculateCommission('UNKNOWN', 1), 0);
+});
+
 // === normalizeFillsToTrades ===
 console.log('\n=== Fills to Trades Normalization Tests ===\n');
 
@@ -384,14 +426,14 @@ test('normalizeFillsToTrades calculates PnL correctly for NQ', function () {
   assert.ok(Math.abs(trades[0].pnl - 100) < 0.01, 'Expected $100, got $' + trades[0].pnl);
 });
 
-test('normalizeFillsToTrades accumulates commission from both fills', function () {
+test('normalizeFillsToTrades calculates commission from product code', function () {
   var csvText = '_id,_orderId,_contractId,_timestamp,_tradeDate,_action,_qty,_price,_active,_accountId,Fill ID,Order ID,Timestamp,Date,Account,B/S,Quantity,Price,_priceFormat,_priceFormatType,_tickSize,Contract,Product,Product Description,commission\n' +
     '1,1,200,2026-02-11 06:34:46.772Z,2026-02-11,1,1,25271.0,true,1,1,1,02/11/2026 15:34:46,2/11/26,ACC, Sell,1,25271.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79\n' +
     '2,2,200,2026-02-11 07:10:55.153Z,2026-02-11,0,1,25266.0,true,1,2,2,02/11/2026 16:10:55,2/11/26,ACC, Buy,1,25266.00,-2,0,0.25,NQH6,NQ,E-Mini NASDAQ 100,0.79';
   var parsed = CSVParser.parseCSVText(csvText);
   var trades = CSVParser.normalizeFillsToTrades(parsed);
-  // Commission: 0.79 (sell) + 0.79 (buy) = 1.58
-  assert.ok(Math.abs(trades[0].commission - 1.58) < 0.01, 'Expected $1.58, got $' + trades[0].commission);
+  // NQ: $2.38 per side × 2 = $4.76
+  assert.ok(Math.abs(trades[0].commission - 4.76) < 0.01, 'Expected $4.76, got $' + trades[0].commission);
 });
 
 test('normalizeFillsToTrades handles loss trade correctly', function () {

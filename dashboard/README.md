@@ -17,7 +17,6 @@ TradovateからダウンロードしたCSVファイルをアップロードす�
   - 累積損益（線グラフ）
   - 曜日別損益（棒グラフ）
 - **トレード一覧テーブル**: 全カラムソート対応、日付・シンボルフィルタ
-- **Google Sheets保存**: ワンクリックでスプレッドシートにデータ出力
 
 ## ローカル起動手順
 
@@ -32,14 +31,10 @@ TradovateからダウンロードしたCSVファイルをアップロードす�
 git clone <repository-url>
 cd tradovate-analytics-test/dashboard
 
-# 2. 環境変数を設定（Google Sheets連携が必要な場合のみ）
-cp .env.example .env
-# .env ファイルを編集して Google API 情報を入力
-
-# 3. サーバーを起動
+# 2. サーバーを起動
 node server/index.js
 
-# 4. ブラウザでアクセス
+# 3. ブラウザでアクセス
 # http://localhost:3000
 ```
 
@@ -50,59 +45,6 @@ node server/index.js
 ```bash
 node tests/kpi.test.js
 ```
-
-## Google Sheets 連携手順
-
-### 1. Google Cloud Console でプロジェクトを作成
-
-1. [Google Cloud Console](https://console.cloud.google.com/) にアクセス
-2. 新しいプロジェクトを作成（または既存プロジェクトを選択）
-3. 「APIとサービス」→「ライブラリ」から **Google Sheets API** を有効化
-
-### 2. サービスアカウントを作成
-
-1. 「APIとサービス」→「認証情報」→「認証情報を作成」→「サービスアカウント」
-2. 名前をつけて作成
-3. 「キー」タブ →「鍵を追加」→「新しい鍵を作成」→ JSON を選択
-4. ダウンロードされた JSON から以下を `.env` に設定：
-   - `client_email` → `GOOGLE_SERVICE_ACCOUNT_EMAIL`
-   - `private_key` → `GOOGLE_PRIVATE_KEY`
-
-### 3. スプレッドシートを準備
-
-1. Google Sheets で新しいスプレッドシートを作成
-2. 3つのシートを作成：**Trades**, **DailySummary**, **KPI**
-3. スプレッドシートの共有設定で、サービスアカウントのメールアドレスに **編集者** 権限を付与
-4. スプレッドシート URL から ID を `.env` の `GOOGLE_SPREADSHEET_ID` に設定
-
-## デプロイ手順（Vercel）
-
-### 前提条件
-
-- Vercel CLI がインストール済み（`npm i -g vercel`）
-- Vercel アカウント
-
-### 手順
-
-```bash
-# 1. Vercel にログイン
-vercel login
-
-# 2. デプロイ
-cd dashboard
-vercel
-
-# 3. 環境変数を設定
-vercel env add GOOGLE_SERVICE_ACCOUNT_EMAIL
-vercel env add GOOGLE_PRIVATE_KEY
-vercel env add GOOGLE_SPREADSHEET_ID
-
-# 4. 再デプロイ（環境変数反映）
-vercel --prod
-```
-
-**注意**: Vercelにデプロイする場合は、サーバーをVercel Serverless Functions形式に変換する必要があります。
-`/api/sheets/save` を `api/sheets/save.js` として配置してください。
 
 ## プロジェクト構造
 
@@ -119,12 +61,10 @@ dashboard/
 │       ├── table.js         # トレードテーブル
 │       └── app.js           # メインアプリケーション
 ├── server/
-│   ├── index.js             # HTTPサーバー
-│   └── google-sheets.js     # Google Sheets API連携
+│   └── index.js             # HTTPサーバー
 ├── tests/
 │   └── kpi.test.js          # ユニットテスト（40テスト）
 ├── sample-data/             # サンプルCSV
-├── .env.example             # 環境変数テンプレート
 └── README.md
 ```
 

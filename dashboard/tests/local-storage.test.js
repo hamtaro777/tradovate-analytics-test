@@ -38,7 +38,7 @@ function resetStore() {
 var sampleTrades = [
   {
     id: 1, symbol: 'NQH6', qty: 1, buyPrice: 21000, sellPrice: 21005,
-    pnl: 100, commission: 0.79,
+    pnl: 100, commission: 4.76,
     boughtTimestamp: new Date('2026-02-11T09:30:00Z'),
     soldTimestamp: new Date('2026-02-11T10:06:08Z'),
     duration: '36min 8sec', direction: 'Long',
@@ -47,7 +47,7 @@ var sampleTrades = [
   },
   {
     id: 2, symbol: 'MESH6', qty: 1, buyPrice: 5800, sellPrice: 5800.95,
-    pnl: 23.75, commission: 0.25,
+    pnl: 23.75, commission: 1.62,
     boughtTimestamp: new Date('2026-02-11T10:15:00Z'),
     soldTimestamp: new Date('2026-02-11T10:20:00Z'),
     duration: '5min 0sec', direction: 'Long',
@@ -60,7 +60,7 @@ var sampleTrades = [
 var additionalTrades = [
   {
     id: 1, symbol: 'MESH6', qty: 1, buyPrice: 5810, sellPrice: 5812.25,
-    pnl: 11.25, commission: 0.25,
+    pnl: 11.25, commission: 1.62,
     boughtTimestamp: new Date('2026-02-12T09:30:00Z'),
     soldTimestamp: new Date('2026-02-12T09:45:00Z'),
     duration: '15min 0sec', direction: 'Long',
@@ -69,7 +69,7 @@ var additionalTrades = [
   },
   {
     id: 2, symbol: 'MESH6', qty: 1, buyPrice: 5815, sellPrice: 5813.25,
-    pnl: -8.75, commission: 0.25,
+    pnl: -8.75, commission: 1.62,
     boughtTimestamp: new Date('2026-02-12T10:00:00Z'),
     soldTimestamp: new Date('2026-02-12T10:10:00Z'),
     duration: '10min 0sec', direction: 'Long',
@@ -189,7 +189,7 @@ test('load restores all trade fields', function () {
   assert.strictEqual(t.buyPrice, 21000);
   assert.strictEqual(t.sellPrice, 21005);
   assert.strictEqual(t.pnl, 100);
-  assert.strictEqual(t.commission, 0.79);
+  assert.strictEqual(t.commission, 4.76);
   assert.strictEqual(t.duration, '36min 8sec');
   assert.strictEqual(t.direction, 'Long');
   assert.strictEqual(t.productDescription, 'E-Mini NASDAQ 100');
@@ -224,7 +224,7 @@ test('load migrates v1 format (fileName → fileNames)', function () {
     fileName: 'old-format.csv',
     trades: [{
       id: 1, symbol: 'NQH6', qty: 1, buyPrice: 21000, sellPrice: 21005,
-      pnl: 100, commission: 0.79,
+      pnl: 100, commission: 4.76,
       boughtTimestamp: '2026-02-11T09:30:00.000Z',
       soldTimestamp: '2026-02-11T10:06:08.000Z',
       duration: '36min 8sec', direction: 'Long',

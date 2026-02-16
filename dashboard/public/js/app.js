@@ -159,8 +159,6 @@
       applyMergedTrades(newTrades);
       hideStatus();
 
-      // Google Sheets保存（設定済みの場合）
-      saveToGoogleSheets();
     } catch (err) {
       showError('Fills CSVの処理中にエラーが発生しました: ' + err.message);
     }
@@ -269,8 +267,6 @@
       applyMergedTrades(newTrades);
       hideStatus();
 
-      // Google Sheets保存（設定済みの場合）
-      saveToGoogleSheets();
     } catch (err) {
       showError('データ処理中にエラーが発生しました: ' + err.message);
     }
@@ -660,56 +656,6 @@
           if (dowCanvas) Charts.drawDayOfWeekChart(dowCanvas, state.dayOfWeekSummary);
         }
       }, 200);
-    });
-  }
-
-  /**
-   * Google Sheets保存
-   */
-  function saveToGoogleSheets() {
-    var saveBtn = document.getElementById('btn-save-sheets');
-    if (!saveBtn) return;
-
-    saveBtn.style.display = 'inline-block';
-    saveBtn.addEventListener('click', function () {
-      saveBtn.disabled = true;
-      saveBtn.textContent = '保存中...';
-
-      var payload = {
-        trades: state.trades.map(function (t) {
-          return {
-            id: t.id, symbol: t.symbol, qty: t.qty,
-            buyPrice: t.buyPrice, sellPrice: t.sellPrice,
-            pnl: t.pnl, commission: t.commission,
-            boughtTimestamp: t.boughtTimestamp.toISOString(),
-            soldTimestamp: t.soldTimestamp.toISOString(),
-            duration: t.duration, tradeDate: t.tradeDate
-          };
-        }),
-        dailySummary: state.dailySummary,
-        kpis: state.kpis
-      };
-
-      fetch('/api/sheets/save', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      })
-        .then(function (res) { return res.json(); })
-        .then(function (data) {
-          if (data.success) {
-            showSuccess('Google Sheetsに保存しました。');
-          } else {
-            showError('Google Sheetsへの保存に失敗しました: ' + (data.error || '不明なエラー'));
-          }
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Google Sheetsに保存';
-        })
-        .catch(function (err) {
-          showError('Google Sheetsへの接続に失敗しました。サーバー設定を確認してください。');
-          saveBtn.disabled = false;
-          saveBtn.textContent = 'Google Sheetsに保存';
-        });
     });
   }
 
