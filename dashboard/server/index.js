@@ -1,10 +1,9 @@
 /**
- * HTTP Server - 静的ファイル配信 + Google Sheets API
+ * HTTP Server - 静的ファイル配信
  */
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { saveToSheets } = require('./google-sheets');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
@@ -19,20 +18,6 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon'
 };
-
-/**
- * リクエストボディを読み取る
- * @param {http.IncomingMessage} req
- * @returns {Promise<string>}
- */
-function readBody(req) {
-  return new Promise((resolve, reject) => {
-    const chunks = [];
-    req.on('data', (chunk) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString()));
-    req.on('error', reject);
-  });
-}
 
 /**
  * JSONレスポンスを送信
@@ -110,19 +95,6 @@ async function handleAPI(req, res) {
       'Access-Control-Allow-Headers': 'Content-Type'
     });
     res.end();
-    return;
-  }
-
-  if (url === '/api/sheets/save' && method === 'POST') {
-    try {
-      const body = await readBody(req);
-      const payload = JSON.parse(body);
-      const result = await saveToSheets(payload);
-      sendJSON(res, 200, { success: true, spreadsheetId: result.spreadsheetId });
-    } catch (err) {
-      console.error('Google Sheets save error:', err.message);
-      sendJSON(res, 500, { success: false, error: err.message });
-    }
     return;
   }
 
