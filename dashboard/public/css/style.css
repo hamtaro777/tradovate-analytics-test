@@ -209,6 +209,15 @@ body {
 .btn-danger-outline:hover {
   background: var(--negative-bg);
 }
+.btn-danger-solid {
+  background: var(--negative);
+  color: white;
+  border-color: var(--negative);
+}
+.btn-danger-solid:hover {
+  background: #dc2626;
+  color: white;
+}
 
 /* ==================== KPI Cards ==================== */
 #kpi-cards {
@@ -518,10 +527,6 @@ td.pnl-negative {
 .btn-sm {
   padding: 6px 12px;
   font-size: 0.8rem;
-}
-
-#btn-save-sheets {
-  display: none;
 }
 
 /* ==================== Mapping Modal ==================== */
